@@ -17,10 +17,16 @@ import (
 	"volun-data/internal/config"
 	"volun-data/internal/database"
 	"volun-data/internal/httpapi"
+	"volun-data/internal/migration"
+	"volun-data/internal/migrations"
+	"volun-data/internal/observability"
 )
 
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	log, err := observability.NewLogger("info")
+	if err != nil {
+		panic(err)
+	}
 	if err := run(log); err != nil {
 		// Driver errors can contain connection details; keep them out of default logs.
 		log.Error("API stopped", "error", err.Error())
@@ -33,6 +39,11 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	log, err = observability.NewLogger(cfg.LogLevel)
+	if err != nil {
+		return err
+	}
+	slog.SetDefault(log)
 	gin.SetMode(gin.ReleaseMode)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -47,14 +58,23 @@ func run(log *slog.Logger) error {
 	defer pool.Close()
 	authService := &auth.Service{DB: db, Config: cfg.Auth, HTTP: &http.Client{Timeout: 10 * time.Second}}
 	log.Info("SSO configuration", "client_id_configured", cfg.Auth.SSOClientID != "", "client_secret_configured", cfg.Auth.SSOClientSecret != "")
-	if err := authService.Migrate(); err != nil {
+	if err := migration.Run(db, migrations.All()); err != nil {
 		return fmt.Errorf("authentication migration: %w", err)
+	}
+	log.Info("database ready", "driver", cfg.Database.Driver, "schema_version", 1)
+	if cfg.Database.Driver == "sqlite" {
+		log.Info("local database", "path", cfg.Database.SQLitePath, "user_primary_key", "sub")
 	}
 	if cfg.Env == "dev" {
 		if err := authService.SeedDev(); err != nil {
 			return fmt.Errorf("seed development account: %w", err)
 		}
-		log.Info("development login credentials", "username", cfg.Auth.DevUsername, "password", cfg.Auth.DevPassword)
+		var devUser auth.User
+		if err := db.Where("username = ?", cfg.Auth.DevUsername).First(&devUser).Error; err != nil {
+			return fmt.Errorf("load development account: %w", err)
+		}
+		log.Info("development account ready", "sub", devUser.Sub, "id", devUser.ID, "username", devUser.Username, "groups", devUser.Groups)
+		log.Debug("development login credentials", "username", cfg.Auth.DevUsername, "password", cfg.Auth.DevPassword)
 	}
 	router := httpapi.NewRouter(pool, log, authService)
 	if err := router.SetTrustedProxies(nil); err != nil {

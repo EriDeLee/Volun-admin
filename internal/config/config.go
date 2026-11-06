@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -17,9 +18,11 @@ type Config struct {
 	ShutdownTimeout time.Duration
 	Database        Database
 	Auth            Auth
+	LogLevel        string
 }
 
 type Auth struct {
+	FrontendURL     string
 	SessionTTL      time.Duration
 	CookieSecure    bool
 	DevUsername     string
@@ -70,6 +73,10 @@ func load(getenv func(string) string) (Config, error) {
 		return fallback
 	}
 	c := Config{Env: value("APP_ENV", "dev"), HTTPAddr: value("HTTP_ADDR", ":8080")}
+	c.LogLevel = value("LOG_LEVEL", "info")
+	if c.LogLevel != "debug" && c.LogLevel != "info" && c.LogLevel != "warn" && c.LogLevel != "error" {
+		return Config{}, fmt.Errorf("LOG_LEVEL must be debug, info, warn or error")
+	}
 	if c.Env != "dev" && c.Env != "test" && c.Env != "prod" {
 		return Config{}, fmt.Errorf("APP_ENV must be dev, test or prod")
 	}
@@ -83,13 +90,18 @@ func load(getenv func(string) string) (Config, error) {
 		URL:        strings.TrimSpace(getenv("DATABASE_URL")),
 	}
 	c.Auth = Auth{
-		SessionTTL: 8 * time.Hour, CookieSecure: c.Env == "prod",
+		FrontendURL: value("FRONTEND_URL", "http://localhost:5173"),
+		SessionTTL:  8 * time.Hour, CookieSecure: c.Env == "prod",
 		DevUsername: value("DEV_ADMIN_USERNAME", "admin"), DevPassword: strings.TrimSpace(getenv("DEV_ADMIN_PASSWORD")),
 		SSOClientID: strings.TrimSpace(getenv("SSO_CLIENT_ID")), SSOClientSecret: strings.TrimSpace(getenv("SSO_CLIENT_SECRET")),
 		SSORedirectURI: value("SSO_REDIRECT_URI", "http://localhost:8080/auth/sso/callback"), SSOScopes: value("SSO_SCOPES", "openid profile email student_number"),
 		SSOAuthorizeURL: value("SSO_AUTHORIZE_URL", "https://flyingstu.buaa.edu.cn/asso/oauth/authorize.php"),
 		SSOTokenURL:     value("SSO_TOKEN_URL", "https://flyingstu.buaa.edu.cn/asso/oauth/token.php"),
 		SSOUserInfoURL:  value("SSO_USERINFO_URL", "https://flyingstu.buaa.edu.cn/asso/oauth/userinfo.php"),
+	}
+	frontend, err := url.Parse(c.Auth.FrontendURL)
+	if err != nil || (frontend.Scheme != "http" && frontend.Scheme != "https") || frontend.Host == "" || frontend.User != nil || frontend.RawQuery != "" || frontend.Fragment != "" || (frontend.Path != "" && frontend.Path != "/") {
+		return Config{}, fmt.Errorf("FRONTEND_URL must be an HTTP(S) origin")
 	}
 	if v := strings.TrimSpace(getenv("SESSION_TTL_SECONDS")); v != "" {
 		n, err := strconv.Atoi(v)

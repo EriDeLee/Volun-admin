@@ -1,8 +1,10 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +16,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 	"volun-data/internal/config"
+	"volun-data/internal/migration"
 )
 
 func testService(t *testing.T, transport http.RoundTripper) *Service {
@@ -29,7 +32,7 @@ func testService(t *testing.T, transport http.RoundTripper) *Service {
 	pool.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = pool.Close() })
 	s := &Service{DB: db, Config: config.Auth{SessionTTL: time.Hour, SSOClientID: "client-test", SSOClientSecret: "secret-test", SSORedirectURI: "http://localhost:8080/auth/sso/callback", SSOScopes: "openid profile email", SSOAuthorizeURL: "https://issuer.test/authorize", SSOTokenURL: "https://issuer.test/token", SSOUserInfoURL: "https://issuer.test/userinfo"}, HTTP: &http.Client{Transport: transport}}
-	if err := s.Migrate(); err != nil {
+	if err := migration.Run(s.DB, testSteps()); err != nil {
 		t.Fatal(err)
 	}
 	return s
@@ -86,6 +89,11 @@ func TestSSOCallbackExchangesTokenAndCreatesSession(t *testing.T) {
 		return response(404, `{}`), nil
 	})
 	s := testService(t, transport)
+	s.Config.FrontendURL = "http://localhost:5173"
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
 	state := "state-test"
 	if err := s.DB.Create(&LoginTransaction{ID: "tx", StateDigest: digest(state), ReturnTo: "/", ExpiresAt: time.Now().Add(time.Minute)}).Error; err != nil {
 		t.Fatal(err)
@@ -94,7 +102,7 @@ func TestSSOCallbackExchangesTokenAndCreatesSession(t *testing.T) {
 	r.GET("/sso/callback", s.SSOCallback)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("GET", "/sso/callback?code=one-time&state="+state, nil))
-	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/" {
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "http://localhost:5173/" {
 		t.Fatalf("status/location = %d/%q", w.Code, w.Header().Get("Location"))
 	}
 	if w.Header().Get("Set-Cookie") == "" {
@@ -134,6 +142,16 @@ func TestSSOCallbackExchangesTokenAndCreatesSession(t *testing.T) {
 	if tx.ConsumedAt == nil {
 		t.Fatal("transaction was not consumed")
 	}
+	for _, stage := range []string{"SSO callback received", "SSO upstream request", "SSO upstream response", "SSO identity received", "SSO login completed"} {
+		if !strings.Contains(logs.String(), stage) {
+			t.Fatalf("missing log stage %s", stage)
+		}
+	}
+	for _, secret := range []string{"access-test", "secret-test", "one-time", "state-test"} {
+		if strings.Contains(logs.String(), secret) {
+			t.Fatalf("secret leaked: %s", secret)
+		}
+	}
 }
 
 func TestPasswordLoginAndLogout(t *testing.T) {
@@ -142,6 +160,16 @@ func TestPasswordLoginAndLogout(t *testing.T) {
 	s.Config.DevPassword = "isolated-test-password"
 	if err := s.SeedDev(); err != nil {
 		t.Fatal(err)
+	}
+	if err := s.SeedDev(); err != nil {
+		t.Fatal(err)
+	}
+	var adminCount int64
+	if err := s.DB.Model(&User{}).Where("username = ?", s.Config.DevUsername).Count(&adminCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if adminCount != 1 {
+		t.Fatal("development administrator duplicated")
 	}
 	r := gin.New()
 	r.POST("/login", s.Login)
@@ -204,9 +232,16 @@ func TestMigrateLegacyUserPrimaryKey(t *testing.T) {
 	}
 	s := &Service{DB: db}
 	for range 2 {
-		if err := s.Migrate(); err != nil {
+		if err := migration.Run(s.DB, testSteps()); err != nil {
 			t.Fatal(err)
 		}
+	}
+	var versions int64
+	if err := db.Model(&migration.Record{}).Count(&versions).Error; err != nil {
+		t.Fatal(err)
+	}
+	if versions != 2 {
+		t.Fatalf("migration versions = %d, want 2", versions)
 	}
 	var user User
 	if err := db.First(&user, "sub = ?", "legacy-key").Error; err != nil {
@@ -228,6 +263,27 @@ func TestMigrateLegacyUserPrimaryKey(t *testing.T) {
 			t.Fatal("student id must not be primary key")
 		}
 	}
+}
+
+func testSteps() []migration.Step {
+	return []migration.Step{{Version: 0, Name: "auth_initial_schema", Up: func(db *gorm.DB) error {
+		if db.Migrator().HasTable(&User{}) && !db.Migrator().HasColumn(&User{}, "sub") {
+			return nil
+		}
+		return db.AutoMigrate(&User{}, &Session{}, &LoginTransaction{})
+	}}, {Version: 1, Name: "auth_sub_primary_key", Up: func(db *gorm.DB) error {
+		if db.Migrator().HasTable(&User{}) && !db.Migrator().HasColumn(&User{}, "sub") {
+			if err := db.Migrator().RenameColumn(&User{}, "id", "sub"); err != nil {
+				return err
+			}
+		}
+		if db.Migrator().HasIndex(&User{}, "idx_users_username") {
+			if err := db.Migrator().DropIndex(&User{}, "idx_users_username"); err != nil {
+				return err
+			}
+		}
+		return db.AutoMigrate(&User{}, &Session{}, &LoginTransaction{})
+	}}}
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

@@ -48,6 +48,8 @@ func TestLoad(t *testing.T) {
 		{"prod rejects sqlite", map[string]string{"APP_ENV": "prod", "DB_DRIVER": "sqlite"}, true, ""},
 		{"postgres", map[string]string{"APP_ENV": "prod", "DATABASE_URL": "postgres://localhost/example"}, false, "postgres"},
 		{"invalid environment", map[string]string{"APP_ENV": "production-typo"}, true, ""},
+		{"invalid log level", map[string]string{"LOG_LEVEL": "verbose"}, true, ""},
+		{"invalid frontend origin", map[string]string{"FRONTEND_URL": "//evil.example"}, true, ""},
 		{"invalid timeout", map[string]string{"DB_CONNECT_TIMEOUT": "0s"}, true, ""},
 		{"invalid pool", map[string]string{"DB_MAX_OPEN_CONNS": "1", "DB_MAX_IDLE_CONNS": "2"}, true, ""},
 	} {

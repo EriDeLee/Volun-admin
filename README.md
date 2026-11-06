@@ -78,6 +78,16 @@ docs/                 项目方案与任务拆解
 
 ## 检查
 
+### 回调、迁移与调试日志
+
+学校登记回调保持 `SSO_REDIRECT_URI=http://localhost:8080/auth/sso/callback`；登录结束后由后端跳转到 `FRONTEND_URL`（默认 `http://localhost:5173`）及已保存的站内路径。失败提示也回到前端登录页。部署时将 FRONTEND_URL 配成实际前端域名，不能带查询串或页面路径。
+
+开发数据库默认是 `data/volun-data.db`（SQLite），通过 GORM 访问；生产使用 PostgreSQL。`users.sub` 是主键，`users.id` 是学号，`sessions.user_id` 关联的是 sub。旧本地主键保留原值，不会凭账号名自动合并已有 SSO 身份。
+
+迁移由全局 `internal/migration/runner.go` 管理，具体版本文件放在 `internal/migrations/`（当前为 `auth_v0000.go` ???? `auth_v0001.go` ????），`schema_migrations` 保存 version、name、applied_at。当前版本1兼容旧表并建立 sub 主键结构；升级在事务中执行，已记录版本不再重复执行。新增表结构需追加新编号迁移，不能修改已发布版本含义；暂不提供自动降级，数据库版本高于程序时启动失败。正式升级前按部署流程备份。
+
+全局 `internal/observability/upstream.go` 负责 SSO 上游诊断和前端安全跳转，不依赖 auth 业务类型。在 `.env` 设置 `LOG_LEVEL=debug` 后重启，可查看 SSO 授权端点、client_id、redirect_uri、scope、回调参数是否存在、state 校验、Token/UserInfo 上游地址、HTTP 状态、耗时、响应字段名及本地身份解析和最终跳转。日志不会输出 client_secret、code、state、nonce、Token、Cookie、原始响应正文。通过 request_id 关联同一回调中的阶段；默认 info 不输出这些调试细节。
+
 开发管理员仅在 `APP_ENV=dev` 时初始化，并在每次启动时输出当前登录账号和密码；启动会将已有本地开发账号密码同步为 `DEV_ADMIN_PASSWORD`（默认 `change-me`）。生产和 test 模式不初始化或打印该账号。
 
 SSO 用户以平台 `sub` 为数据库主键，`id` 保存 `student_number` 字符串，保留前导零；会话关联 `sub`。请为应用申请 `student_number` scope，并在 `.env` 的 `SSO_SCOPES` 中包含它，否则平台可能不返回学号，此时 `id` 留空。旧表升级保留旧主键和会话；旧 SSO 账号不按 username 自动认领为新 sub，必要时人工核对历史记录。
@@ -108,3 +118,6 @@ go build -o bin/api.exe ./cmd/api
 本项目采用 Apache License 2.0，详见 [`LICENSE`](LICENSE)。
 
 \n
+
+Migration v0 initializes a new database; v1 upgrades legacy primary keys. Existing databases already recorded at v1 retain their history and do not rerun v0.
+Dev startup ensures the administrator exists and logs sub/id/username/groups at info; the login password is printed only with LOG_LEVEL=debug. Production does not seed or print development credentials.

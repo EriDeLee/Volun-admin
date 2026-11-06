@@ -4,9 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -14,6 +12,7 @@ import (
 	"time"
 
 	"volun-data/internal/config"
+	"volun-data/internal/sso"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -65,20 +64,13 @@ func respond(c *gin.Context, status, code int, message string, data any) {
 	c.JSON(status, apiResponse{ErrCode: code, Message: message, Data: data, RequestID: c.GetString("request_id")})
 }
 
-func (s *Service) Migrate() error {
-	// Preserve old primary keys and existing session references when upgrading.
-	if s.DB.Migrator().HasTable(&User{}) && !s.DB.Migrator().HasColumn(&User{}, "sub") {
-		if err := s.DB.Migrator().RenameColumn(&User{}, "id", "sub"); err != nil {
-			return err
-		}
+func frontendURL(base, path string) string {
+	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") || strings.ContainsAny(path, "\\\r\n") {
+		path = "/"
 	}
-	if s.DB.Migrator().HasIndex(&User{}, "idx_users_username") {
-		if err := s.DB.Migrator().DropIndex(&User{}, "idx_users_username"); err != nil {
-			return err
-		}
-	}
-	return s.DB.AutoMigrate(&User{}, &Session{}, &LoginTransaction{})
+	return strings.TrimRight(base, "/") + path
 }
+
 func (s *Service) SeedDev() error {
 	if s.Config.DevPassword == "" {
 		return nil
@@ -177,13 +169,13 @@ func (s *Service) Logout(c *gin.Context) {
 func (s *Service) SSOStart(c *gin.Context) {
 	if s.Config.SSOClientID == "" || s.Config.SSOClientSecret == "" {
 		slog.Warn("SSO unavailable: missing server configuration", "request_id", c.GetString("request_id"), "client_id_configured", s.Config.SSOClientID != "", "client_secret_configured", s.Config.SSOClientSecret != "")
-		c.Redirect(303, "/login?sso=unavailable")
+		c.Redirect(303, frontendURL(s.Config.FrontendURL, "/login?sso=unavailable"))
 		return
 	}
 	state, err := randomToken(24)
 	if err != nil {
 		slog.Error("SSO start failed: cannot create login state", "request_id", c.GetString("request_id"))
-		c.Redirect(303, "/login?sso=error")
+		c.Redirect(303, frontendURL(s.Config.FrontendURL, "/login?sso=error"))
 		return
 	}
 	ret := c.Query("return_to")
@@ -192,13 +184,13 @@ func (s *Service) SSOStart(c *gin.Context) {
 	}
 	if err = s.DB.Create(&LoginTransaction{ID: state[:32], StateDigest: digest(state), ReturnTo: ret, ExpiresAt: time.Now().UTC().Add(5 * time.Minute)}).Error; err != nil {
 		slog.Error("SSO start failed: cannot save login transaction", "request_id", c.GetString("request_id"))
-		c.Redirect(303, "/login?sso=error")
+		c.Redirect(303, frontendURL(s.Config.FrontendURL, "/login?sso=error"))
 		return
 	}
 
 	nonce, err := randomToken(24)
 	if err != nil {
-		c.Redirect(303, "/login?sso=error")
+		c.Redirect(303, frontendURL(s.Config.FrontendURL, "/login?sso=error"))
 		return
 	}
 
@@ -208,15 +200,20 @@ func (s *Service) SSOStart(c *gin.Context) {
 		"redirect_uri":  {s.Config.SSORedirectURI},
 		"scope":         {s.Config.SSOScopes},
 		"state":         {state},
-		"nonce":         {nonce}, // Placeholder; will be set below.
+		"nonce":         {nonce},
 	}
 
 	// Authentication uses userinfo, not id_token. If ID Token authentication is
 	// added, its nonce must also be persisted and verified with the signed claims.
+	slog.Debug("SSO authorization redirect", "request_id", c.GetString("request_id"), "endpoint", sso.SafeEndpoint(s.Config.SSOAuthorizeURL), "client_id", s.Config.SSOClientID, "redirect_uri", s.Config.SSORedirectURI, "scope", s.Config.SSOScopes)
 	c.Redirect(302, s.Config.SSOAuthorizeURL+"?"+strings.ReplaceAll(q.Encode(), "+", "%20"))
 }
 func (s *Service) SSOCallback(c *gin.Context) {
-	fail := func() { c.Redirect(303, "/login?sso=failed") }
+	slog.Debug("SSO callback received", "request_id", c.GetString("request_id"), "code_present", c.Query("code") != "", "state_present", c.Query("state") != "")
+	fail := func() {
+		slog.Warn("SSO callback failed", "request_id", c.GetString("request_id"))
+		c.Redirect(303, frontendURL(s.Config.FrontendURL, "/login?sso=failed"))
+	}
 	state, code := c.Query("state"), c.Query("code")
 	if state == "" || code == "" {
 		fail()
@@ -232,40 +229,38 @@ func (s *Service) SSOCallback(c *gin.Context) {
 		fail()
 		return
 	}
+	slog.Debug("SSO state validated and consumed", "request_id", c.GetString("request_id"))
 	form := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {s.Config.SSORedirectURI}, "client_id": {s.Config.SSOClientID}, "client_secret": {s.Config.SSOClientSecret}}
-	req, _ := http.NewRequestWithContext(c.Request.Context(), "POST", s.Config.SSOTokenURL, strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := s.HTTP.Do(req)
-	if err != nil || resp.StatusCode/100 != 2 {
+	req, err := http.NewRequestWithContext(c.Request.Context(), "POST", s.Config.SSOTokenURL, strings.NewReader(form.Encode()))
+	if err != nil {
 		fail()
 		return
 	}
-	defer resp.Body.Close()
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	var tok struct {
 		AccessToken string `json:"access_token"`
 	}
-	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&tok) != nil || tok.AccessToken == "" {
+	if !sso.Upstream(c, s.HTTP, "token", req, &tok) || tok.AccessToken == "" {
 		fail()
 		return
 	}
-	req, _ = http.NewRequestWithContext(c.Request.Context(), "GET", s.Config.SSOUserInfoURL, nil)
+	req, err = http.NewRequestWithContext(c.Request.Context(), "GET", s.Config.SSOUserInfoURL, nil)
+	if err != nil {
+		fail()
+		return
+	}
 	req.Header.Set("Authorization", "Bearer "+tok.AccessToken)
-	resp, err = s.HTTP.Do(req)
-	if err != nil || resp.StatusCode/100 != 2 {
-		fail()
-		return
-	}
-	defer resp.Body.Close()
 	var info struct {
 		Sub           string `json:"sub"`
 		Username      string `json:"username"`
 		Name          string `json:"name"`
 		StudentNumber string `json:"student_number"`
 	}
-	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info) != nil || info.Sub == "" {
+	if !sso.Upstream(c, s.HTTP, "userinfo", req, &info) || info.Sub == "" {
 		fail()
 		return
 	}
+	slog.Debug("SSO identity received", "request_id", c.GetString("request_id"), "sub", info.Sub, "student_number_present", info.StudentNumber != "")
 	username := info.Username
 	if username == "" {
 		username = "sso_" + info.Sub
@@ -282,6 +277,7 @@ func (s *Service) SSOCallback(c *gin.Context) {
 		fail()
 		return
 	}
+	slog.Debug("SSO local identity resolved", "request_id", c.GetString("request_id"), "sub", u.Sub)
 	if u.Status != "active" {
 		fail()
 		return
@@ -290,7 +286,8 @@ func (s *Service) SSOCallback(c *gin.Context) {
 		fail()
 		return
 	}
-	c.Redirect(303, tx.ReturnTo)
+	slog.Debug("SSO login completed", "request_id", c.GetString("request_id"), "destination", frontendURL(s.Config.FrontendURL, tx.ReturnTo))
+	c.Redirect(303, frontendURL(s.Config.FrontendURL, tx.ReturnTo))
 }
 func mustToken(n int) string { v, _ := randomToken(n); return v }
 
