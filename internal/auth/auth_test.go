@@ -81,7 +81,7 @@ func TestSSOCallbackExchangesTokenAndCreatesSession(t *testing.T) {
 			return response(200, `{"access_token":"access-test"}`), nil
 		}
 		if req.URL.Path == "/userinfo" && req.Header.Get("Authorization") == "Bearer access-test" {
-			return response(200, `{"sub":"sub-1","username":"student1","name":"Student One"}`), nil
+			return response(200, `{"sub":"sub-1","username":"student1","name":"Student One","student_number":"00123456"}`), nil
 		}
 		return response(404, `{}`), nil
 	})
@@ -114,6 +114,20 @@ func TestSSOCallbackExchangesTokenAndCreatesSession(t *testing.T) {
 	s.DB.Model(&User{}).Where("username = ?", "student1").Count(&count)
 	if count != 1 {
 		t.Fatalf("users = %d", count)
+	}
+	var user User
+	if err := s.DB.First(&user, "sub = ?", "sub-1").Error; err != nil {
+		t.Fatal(err)
+	}
+	if user.ID != "00123456" || user.Groups != "formal_user" {
+		t.Fatalf("incorrect student identity: %+v", userJSON(user))
+	}
+	var session Session
+	if err := s.DB.First(&session).Error; err != nil {
+		t.Fatal(err)
+	}
+	if session.UserID != "sub-1" {
+		t.Fatal("session must reference sub")
 	}
 	var tx LoginTransaction
 	s.DB.First(&tx, "id = ?", "tx")
@@ -165,6 +179,54 @@ func TestPasswordLoginAndLogout(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("revoked sessions = %d, want 1", count)
+	}
+}
+
+func TestMigrateLegacyUserPrimaryKey(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = pool.Close() })
+	if err := db.Exec("CREATE TABLE users (id text PRIMARY KEY, username text, password_hash text, status text)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("CREATE UNIQUE INDEX idx_users_username ON users(username)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO users (id, username, password_hash, status) VALUES ('legacy-key', 'admin', 'hash', 'active')").Error; err != nil {
+		t.Fatal(err)
+	}
+	s := &Service{DB: db}
+	for range 2 {
+		if err := s.Migrate(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var user User
+	if err := db.First(&user, "sub = ?", "legacy-key").Error; err != nil {
+		t.Fatal(err)
+	}
+	if user.Username != "admin" {
+		t.Fatal("legacy user lost")
+	}
+	columns, err := db.Migrator().ColumnTypes(&User{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, column := range columns {
+		primary, _ := column.PrimaryKey()
+		if column.Name() == "sub" && !primary {
+			t.Fatal("sub must be primary key")
+		}
+		if column.Name() == "id" && primary {
+			t.Fatal("student id must not be primary key")
+		}
 	}
 }
 

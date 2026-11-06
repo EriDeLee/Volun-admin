@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -22,9 +23,10 @@ import (
 const cookieName = "volun_session"
 
 type User struct {
-	ID           string `gorm:"primaryKey;size:36"`
+	Sub          string `gorm:"primaryKey;size:128"`
+	ID           string `gorm:"size:120;index"`
 	Name         string
-	Username     string `gorm:"uniqueIndex;size:120"`
+	Username     string `gorm:"index;size:120"`
 	PasswordHash string
 	Status       string `gorm:"size:20;index"`
 	Groups       string
@@ -34,7 +36,7 @@ type User struct {
 type Session struct {
 	ID          string    `gorm:"primaryKey;size:64"`
 	TokenDigest string    `gorm:"uniqueIndex;size:64"`
-	UserID      string    `gorm:"index;size:36"`
+	UserID      string    `gorm:"index;size:128"` // References User.Sub, never the student number.
 	ExpiresAt   time.Time `gorm:"index"`
 	RevokedAt   *time.Time
 	CreatedAt   time.Time
@@ -63,23 +65,37 @@ func respond(c *gin.Context, status, code int, message string, data any) {
 	c.JSON(status, apiResponse{ErrCode: code, Message: message, Data: data, RequestID: c.GetString("request_id")})
 }
 
-func (s *Service) Migrate() error { return s.DB.AutoMigrate(&User{}, &Session{}, &LoginTransaction{}) }
+func (s *Service) Migrate() error {
+	// Preserve old primary keys and existing session references when upgrading.
+	if s.DB.Migrator().HasTable(&User{}) && !s.DB.Migrator().HasColumn(&User{}, "sub") {
+		if err := s.DB.Migrator().RenameColumn(&User{}, "id", "sub"); err != nil {
+			return err
+		}
+	}
+	if s.DB.Migrator().HasIndex(&User{}, "idx_users_username") {
+		if err := s.DB.Migrator().DropIndex(&User{}, "idx_users_username"); err != nil {
+			return err
+		}
+	}
+	return s.DB.AutoMigrate(&User{}, &Session{}, &LoginTransaction{})
+}
 func (s *Service) SeedDev() error {
 	if s.Config.DevPassword == "" {
-		return nil
-	}
-	var count int64
-	if err := s.DB.Model(&User{}).Where("username = ?", s.Config.DevUsername).Count(&count).Error; err != nil {
-		return err
-	}
-	if count > 0 {
 		return nil
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(s.Config.DevPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
-	return s.DB.Create(&User{ID: mustToken(16), Name: "开发管理员", Username: s.Config.DevUsername, PasswordHash: string(hash), Status: "active", Groups: "super_admin"}).Error
+	var user User
+	err = s.DB.Where("username = ? AND password_hash <> ?", s.Config.DevUsername, "").First(&user).Error
+	if err == nil {
+		return s.DB.Model(&User{}).Where("sub = ?", user.Sub).Updates(map[string]any{"password_hash": string(hash), "status": "active"}).Error
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	return s.DB.Create(&User{Sub: "local:" + mustToken(16), ID: s.Config.DevUsername, Name: "开发管理员", Username: s.Config.DevUsername, PasswordHash: string(hash), Status: "active", Groups: "super_admin"}).Error
 }
 func randomToken(n int) (string, error) {
 	b := make([]byte, n)
@@ -92,7 +108,7 @@ func userJSON(u User) gin.H {
 	if u.Groups != "" {
 		groups = strings.Split(u.Groups, ",")
 	}
-	return gin.H{"id": u.ID, "name": u.Name, "username": u.Username, "groups": groups}
+	return gin.H{"sub": u.Sub, "id": u.ID, "name": u.Name, "username": u.Username, "groups": groups}
 }
 
 func (s *Service) issue(c *gin.Context, u User) error {
@@ -101,7 +117,7 @@ func (s *Service) issue(c *gin.Context, u User) error {
 		return err
 	}
 	now := time.Now().UTC()
-	if err = s.DB.Create(&Session{ID: token[:32], TokenDigest: digest(token), UserID: u.ID, ExpiresAt: now.Add(s.Config.SessionTTL), CreatedAt: now}).Error; err != nil {
+	if err = s.DB.Create(&Session{ID: token[:32], TokenDigest: digest(token), UserID: u.Sub, ExpiresAt: now.Add(s.Config.SessionTTL), CreatedAt: now}).Error; err != nil {
 		return err
 	}
 	http.SetCookie(c.Writer, &http.Cookie{Name: cookieName, Value: token, Path: "/", HttpOnly: true, Secure: s.Config.CookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: int(s.Config.SessionTTL.Seconds())})
@@ -117,7 +133,7 @@ func (s *Service) current(c *gin.Context) (User, error) {
 		return User{}, err
 	}
 	var u User
-	err = s.DB.Where("id = ? AND status = ?", sess.UserID, "active").First(&u).Error
+	err = s.DB.Where("sub = ? AND status = ?", sess.UserID, "active").First(&u).Error
 	return u, err
 }
 
@@ -131,7 +147,7 @@ func (s *Service) Login(c *gin.Context) {
 		return
 	}
 	var u User
-	if s.DB.Where("username = ? AND status = ?", strings.TrimSpace(req.Username), "active").First(&u).Error != nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
+	if s.DB.Where("username = ? AND status = ? AND password_hash <> ?", strings.TrimSpace(req.Username), "active", "").First(&u).Error != nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
 		respond(c, 401, 200003, "账号或密码错误", nil)
 		return
 	}
@@ -241,9 +257,10 @@ func (s *Service) SSOCallback(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 	var info struct {
-		Sub      string `json:"sub"`
-		Username string `json:"username"`
-		Name     string `json:"name"`
+		Sub           string `json:"sub"`
+		Username      string `json:"username"`
+		Name          string `json:"name"`
+		StudentNumber string `json:"student_number"`
 	}
 	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info) != nil || info.Sub == "" {
 		fail()
@@ -254,12 +271,20 @@ func (s *Service) SSOCallback(c *gin.Context) {
 		username = "sso_" + info.Sub
 	}
 	var u User
-	if s.DB.Where("username = ?", username).First(&u).Error != nil {
-		u = User{ID: mustToken(16), Name: info.Name, Username: username, Status: "active", Groups: "formal_user"}
+	err = s.DB.Where("sub = ?", info.Sub).First(&u).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		u = User{Sub: info.Sub, ID: info.StudentNumber, Name: info.Name, Username: username, Status: "active", Groups: "formal_user"}
 		if s.DB.Create(&u).Error != nil {
 			fail()
 			return
 		}
+	} else if err != nil {
+		fail()
+		return
+	}
+	if u.Status != "active" {
+		fail()
+		return
 	}
 	if s.issue(c, u) != nil {
 		fail()

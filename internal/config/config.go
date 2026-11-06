@@ -86,7 +86,7 @@ func load(getenv func(string) string) (Config, error) {
 		SessionTTL: 8 * time.Hour, CookieSecure: c.Env == "prod",
 		DevUsername: value("DEV_ADMIN_USERNAME", "admin"), DevPassword: strings.TrimSpace(getenv("DEV_ADMIN_PASSWORD")),
 		SSOClientID: strings.TrimSpace(getenv("SSO_CLIENT_ID")), SSOClientSecret: strings.TrimSpace(getenv("SSO_CLIENT_SECRET")),
-		SSORedirectURI: value("SSO_REDIRECT_URI", "http://localhost:8080/auth/sso/callback"), SSOScopes: value("SSO_SCOPES", "openid profile email"),
+		SSORedirectURI: value("SSO_REDIRECT_URI", "http://localhost:8080/auth/sso/callback"), SSOScopes: value("SSO_SCOPES", "openid profile email student_number"),
 		SSOAuthorizeURL: value("SSO_AUTHORIZE_URL", "https://flyingstu.buaa.edu.cn/asso/oauth/authorize.php"),
 		SSOTokenURL:     value("SSO_TOKEN_URL", "https://flyingstu.buaa.edu.cn/asso/oauth/token.php"),
 		SSOUserInfoURL:  value("SSO_USERINFO_URL", "https://flyingstu.buaa.edu.cn/asso/oauth/userinfo.php"),

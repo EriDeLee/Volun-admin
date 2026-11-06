@@ -78,6 +78,10 @@ docs/                 项目方案与任务拆解
 
 ## 检查
 
+开发管理员仅在 `APP_ENV=dev` 时初始化，并在每次启动时输出当前登录账号和密码；启动会将已有本地开发账号密码同步为 `DEV_ADMIN_PASSWORD`（默认 `change-me`）。生产和 test 模式不初始化或打印该账号。
+
+SSO 用户以平台 `sub` 为数据库主键，`id` 保存 `student_number` 字符串，保留前导零；会话关联 `sub`。请为应用申请 `student_number` scope，并在 `.env` 的 `SSO_SCOPES` 中包含它，否则平台可能不返回学号，此时 `id` 留空。旧表升级保留旧主键和会话；旧 SSO 账号不按 username 自动认领为新 sub，必要时人工核对历史记录。
+
 SSO 本地联调需要在启动后端的同一个 PowerShell 中配置真实应用凭据：
 
 ```powershell

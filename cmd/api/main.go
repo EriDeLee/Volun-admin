@@ -54,6 +54,7 @@ func run(log *slog.Logger) error {
 		if err := authService.SeedDev(); err != nil {
 			return fmt.Errorf("seed development account: %w", err)
 		}
+		log.Info("development login credentials", "username", cfg.Auth.DevUsername, "password", cfg.Auth.DevPassword)
 	}
 	router := httpapi.NewRouter(pool, log, authService)
 	if err := router.SetTrustedProxies(nil); err != nil {
