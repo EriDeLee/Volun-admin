@@ -1,0 +1,180 @@
+package auth
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+	"volun-data/internal/config"
+)
+
+func testService(t *testing.T, transport http.RoundTripper) *Service {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = pool.Close() })
+	s := &Service{DB: db, Config: config.Auth{SessionTTL: time.Hour, SSOClientID: "client-test", SSOClientSecret: "secret-test", SSORedirectURI: "http://localhost:8080/auth/sso/callback", SSOScopes: "openid profile email", SSOAuthorizeURL: "https://issuer.test/authorize", SSOTokenURL: "https://issuer.test/token", SSOUserInfoURL: "https://issuer.test/userinfo"}, HTTP: &http.Client{Transport: transport}}
+	if err := s.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func TestSSOStartUsesExactConfiguredRedirectURI(t *testing.T) {
+	s := testService(t, roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, context.Canceled }))
+	r := gin.New()
+	r.GET("/sso/start", s.SSOStart)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/sso/start?return_to=/", nil))
+	if w.Code != http.StatusFound {
+		t.Fatalf("status = %d", w.Code)
+	}
+	u, err := url.Parse(w.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := u.Query().Get("redirect_uri"); got != s.Config.SSORedirectURI {
+		t.Fatalf("redirect_uri = %q", got)
+	}
+	if u.Query().Get("state") == "" {
+		t.Fatal("missing state")
+	}
+	if u.Query().Get("nonce") == "" {
+		t.Fatal("missing nonce")
+	}
+	if !strings.Contains(u.RawQuery, "scope=openid%20profile%20email") {
+		t.Fatal("scope must match documentation encoding")
+	}
+}
+
+func TestSSOCallbackExchangesTokenAndCreatesSession(t *testing.T) {
+	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/token" {
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			form, err := url.ParseQuery(string(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for key, want := range map[string]string{"code": "one-time", "redirect_uri": "http://localhost:8080/auth/sso/callback", "client_id": "client-test", "client_secret": "secret-test", "grant_type": "authorization_code"} {
+				if form.Get(key) != want {
+					t.Fatalf("token form %s = %q, want %q", key, form.Get(key), want)
+				}
+			}
+			return response(200, `{"access_token":"access-test"}`), nil
+		}
+		if req.URL.Path == "/userinfo" && req.Header.Get("Authorization") == "Bearer access-test" {
+			return response(200, `{"sub":"sub-1","username":"student1","name":"Student One"}`), nil
+		}
+		return response(404, `{}`), nil
+	})
+	s := testService(t, transport)
+	state := "state-test"
+	if err := s.DB.Create(&LoginTransaction{ID: "tx", StateDigest: digest(state), ReturnTo: "/", ExpiresAt: time.Now().Add(time.Minute)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	r := gin.New()
+	r.GET("/sso/callback", s.SSOCallback)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/sso/callback?code=one-time&state="+state, nil))
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/" {
+		t.Fatalf("status/location = %d/%q", w.Code, w.Header().Get("Location"))
+	}
+	if w.Header().Get("Set-Cookie") == "" {
+		t.Fatal("missing session cookie")
+	}
+	r.GET("/me", s.Me)
+	meRequest := httptest.NewRequest("GET", "/me", nil)
+	for _, cookie := range w.Result().Cookies() {
+		meRequest.AddCookie(cookie)
+	}
+	me := httptest.NewRecorder()
+	r.ServeHTTP(me, meRequest)
+	if me.Code != http.StatusOK || !strings.Contains(me.Body.String(), "student1") {
+		t.Fatalf("session lookup: %d %s", me.Code, me.Body.String())
+	}
+	var count int64
+	s.DB.Model(&User{}).Where("username = ?", "student1").Count(&count)
+	if count != 1 {
+		t.Fatalf("users = %d", count)
+	}
+	var tx LoginTransaction
+	s.DB.First(&tx, "id = ?", "tx")
+	if tx.ConsumedAt == nil {
+		t.Fatal("transaction was not consumed")
+	}
+}
+
+func TestPasswordLoginAndLogout(t *testing.T) {
+	s := testService(t, nil)
+	s.Config.DevUsername = "local-test"
+	s.Config.DevPassword = "isolated-test-password"
+	if err := s.SeedDev(); err != nil {
+		t.Fatal(err)
+	}
+	r := gin.New()
+	r.POST("/login", s.Login)
+	r.GET("/me", s.Me)
+	r.POST("/logout", s.Logout)
+	login := httptest.NewRecorder()
+	request := httptest.NewRequest("POST", "/login", strings.NewReader(`{"username":"local-test","password":"isolated-test-password"}`))
+	request.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(login, request)
+	if login.Code != http.StatusOK {
+		t.Fatalf("login: %d %s", login.Code, login.Body.String())
+	}
+	cookies := login.Result().Cookies()
+	if len(cookies) == 0 {
+		t.Fatal("missing session cookie")
+	}
+	for _, path := range []string{"/me", "/logout"} {
+		method := "GET"
+		if path == "/logout" {
+			method = "POST"
+		}
+		req := httptest.NewRequest(method, path, nil)
+		for _, cookie := range cookies {
+			req.AddCookie(cookie)
+		}
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", path, w.Code, w.Body.String())
+		}
+	}
+	var count int64
+	if err := s.DB.Model(&Session{}).Where("revoked_at IS NOT NULL").Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("revoked sessions = %d, want 1", count)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+func response(status int, body string) *http.Response {
+	return &http.Response{StatusCode: status, Body: nopCloser{Reader: strings.NewReader(body)}, Header: make(http.Header)}
+}
+
+type nopCloser struct{ *strings.Reader }
+
+func (nopCloser) Close() error { return nil }

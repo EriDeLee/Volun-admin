@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"volun-data/internal/auth"
 	"volun-data/internal/config"
 	"volun-data/internal/database"
 	"volun-data/internal/httpapi"
@@ -44,7 +45,17 @@ func run(log *slog.Logger) error {
 		return errors.New("database pool unavailable")
 	}
 	defer pool.Close()
-	router := httpapi.NewRouter(pool, log)
+	authService := &auth.Service{DB: db, Config: cfg.Auth, HTTP: &http.Client{Timeout: 10 * time.Second}}
+	log.Info("SSO configuration", "client_id_configured", cfg.Auth.SSOClientID != "", "client_secret_configured", cfg.Auth.SSOClientSecret != "")
+	if err := authService.Migrate(); err != nil {
+		return fmt.Errorf("authentication migration: %w", err)
+	}
+	if cfg.Env == "dev" {
+		if err := authService.SeedDev(); err != nil {
+			return fmt.Errorf("seed development account: %w", err)
+		}
+	}
+	router := httpapi.NewRouter(pool, log, authService)
 	if err := router.SetTrustedProxies(nil); err != nil {
 		return fmt.Errorf("configure trusted proxies: %w", err)
 	}

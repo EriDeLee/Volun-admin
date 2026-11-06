@@ -9,8 +9,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+	"volun-data/internal/auth"
+	"volun-data/internal/config"
 )
 
 type stubPinger struct{ err error }
@@ -35,7 +40,17 @@ func TestRouterResponsesAndLogRedaction(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var logs bytes.Buffer
-			r := NewRouter(stubPinger{tc.dbError}, slog.New(slog.NewJSONHandler(&logs, nil)))
+			db, err := gorm.Open(sqlite.Open(":memory:"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			pool, err := db.DB()
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = pool.Close() })
+			service := &auth.Service{DB: db, Config: config.Auth{SessionTTL: time.Hour}}
+			r := NewRouter(stubPinger{tc.dbError}, slog.New(slog.NewJSONHandler(&logs, nil)), service)
 			r.GET("/panic", func(c *gin.Context) { panic("private panic detail") })
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))

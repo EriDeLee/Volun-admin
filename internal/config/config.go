@@ -1,11 +1,14 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -13,6 +16,21 @@ type Config struct {
 	HTTPAddr        string
 	ShutdownTimeout time.Duration
 	Database        Database
+	Auth            Auth
+}
+
+type Auth struct {
+	SessionTTL      time.Duration
+	CookieSecure    bool
+	DevUsername     string
+	DevPassword     string
+	SSOClientID     string
+	SSOClientSecret string
+	SSORedirectURI  string
+	SSOScopes       string
+	SSOAuthorizeURL string
+	SSOTokenURL     string
+	SSOUserInfoURL  string
 }
 
 type Database struct {
@@ -26,7 +44,22 @@ type Database struct {
 }
 
 func Load() (Config, error) {
-	return load(os.Getenv)
+	return loadFile(".env", os.LookupEnv)
+}
+
+// Read .env without changing process state; explicitly set environment variables
+// always win. Resolve the file relative to the process working directory.
+func loadFile(path string, lookup func(string) (string, bool)) (Config, error) {
+	values, err := godotenv.Read(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return Config{}, fmt.Errorf("cannot load .env: check file access and syntax")
+	}
+	return load(func(key string) string {
+		if value, exists := lookup(key); exists {
+			return value
+		}
+		return values[key]
+	})
 }
 
 func load(getenv func(string) string) (Config, error) {
@@ -48,6 +81,25 @@ func load(getenv func(string) string) (Config, error) {
 		Driver:     value("DB_DRIVER", defaultDriver),
 		SQLitePath: value("SQLITE_PATH", "data/volun-data.db"),
 		URL:        strings.TrimSpace(getenv("DATABASE_URL")),
+	}
+	c.Auth = Auth{
+		SessionTTL: 8 * time.Hour, CookieSecure: c.Env == "prod",
+		DevUsername: value("DEV_ADMIN_USERNAME", "admin"), DevPassword: strings.TrimSpace(getenv("DEV_ADMIN_PASSWORD")),
+		SSOClientID: strings.TrimSpace(getenv("SSO_CLIENT_ID")), SSOClientSecret: strings.TrimSpace(getenv("SSO_CLIENT_SECRET")),
+		SSORedirectURI: value("SSO_REDIRECT_URI", "http://localhost:8080/auth/sso/callback"), SSOScopes: value("SSO_SCOPES", "openid profile email"),
+		SSOAuthorizeURL: value("SSO_AUTHORIZE_URL", "https://flyingstu.buaa.edu.cn/asso/oauth/authorize.php"),
+		SSOTokenURL:     value("SSO_TOKEN_URL", "https://flyingstu.buaa.edu.cn/asso/oauth/token.php"),
+		SSOUserInfoURL:  value("SSO_USERINFO_URL", "https://flyingstu.buaa.edu.cn/asso/oauth/userinfo.php"),
+	}
+	if v := strings.TrimSpace(getenv("SESSION_TTL_SECONDS")); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return Config{}, fmt.Errorf("SESSION_TTL_SECONDS must be positive")
+		}
+		c.Auth.SessionTTL = time.Duration(n) * time.Second
+	}
+	if c.Env == "dev" && c.Auth.DevPassword == "" {
+		c.Auth.DevPassword = "change-me"
 	}
 	if c.Database.Driver != "sqlite" && c.Database.Driver != "postgres" {
 		return Config{}, fmt.Errorf("DB_DRIVER must be sqlite or postgres")

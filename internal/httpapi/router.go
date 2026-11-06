@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"time"
 
+	"volun-data/internal/auth"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -15,7 +17,7 @@ type Pinger interface {
 	PingContext(context.Context) error
 }
 
-func NewRouter(db Pinger, log *slog.Logger) *gin.Engine {
+func NewRouter(db Pinger, log *slog.Logger, authService *auth.Service) *gin.Engine {
 	r := gin.New()
 	r.HandleMethodNotAllowed = true
 	r.Use(func(c *gin.Context) {
@@ -60,6 +62,12 @@ func NewRouter(db Pinger, log *slog.Logger) *gin.Engine {
 	})
 	// Register business and auth routes under this versioned group.
 	api := r.Group("/api/v1")
+	authRoutes := api.Group("/auth")
+	authRoutes.POST("/login", authService.Login)
+	authRoutes.GET("/me", authService.Me)
+	authRoutes.POST("/logout", authService.Logout)
+	authRoutes.GET("/sso/start", authService.SSOStart)
+	r.GET("/auth/sso/callback", authService.SSOCallback)
 	api.GET("/ping", func(c *gin.Context) {
 		respond(c, http.StatusOK, Success, "ok", gin.H{"message": "pong"})
 	})
