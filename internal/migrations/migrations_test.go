@@ -37,7 +37,7 @@ func TestInitializeV0AndUpgradeOnce(t *testing.T) {
 	if err := db.Order("version").Find(&records).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 3 || records[0].Version != 0 || records[1].Version != 1 || records[2].Version != 2 {
+	if len(records) != 4 || records[0].Version != 0 || records[1].Version != 1 || records[2].Version != 2 || records[3].Version != 3 {
 		t.Fatalf("unexpected versions: %+v", records)
 	}
 }

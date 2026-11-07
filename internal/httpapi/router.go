@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"volun-data/internal/activity"
 	"volun-data/internal/auth"
 	"volun-data/internal/dto"
 	"volun-data/internal/errhandler"
@@ -70,6 +71,12 @@ func NewRouter(db Pinger, log *slog.Logger, authService *auth.Service) *gin.Engi
 	authRoutes.POST("/logout", authService.Logout)
 	authRoutes.POST("/setup-password", authService.SetInitialPassword)
 	authRoutes.GET("/sso/start", authService.SSOStart)
+	activityService := &activity.Service{DB: authService.DB}
+	activityRoutes := api.Group("/activity", authService.Middleware(), activity.RequireManager)
+	activityRoutes.GET("/dashboard", activityService.Dashboard)
+	activityRoutes.GET("/projects", activityService.ListProjects)
+	activityRoutes.POST("/projects", activityService.CreateProject)
+	activityRoutes.GET("/projects/:id", activityService.GetProject)
 	r.GET("/auth/sso/callback", authService.SSOCallback)
 	api.GET("/ping", func(c *gin.Context) {
 		errhandler.OK(c, dto.PingResponse{Message: "pong"})

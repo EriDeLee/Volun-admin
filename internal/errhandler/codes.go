@@ -11,6 +11,7 @@ const (
 	ResourceNotFound      Code = 100002
 	MethodNotAllowed      Code = 100006
 	Unauthenticated       Code = 200001
+	PermissionDenied      Code = 200002
 	InvalidCredentials    Code = 200003
 	CSRFValidationFailed  Code = 200008
 	PasswordSetupRequired Code = 200009
@@ -29,6 +30,8 @@ func (code Code) details() (int, string) {
 		return http.StatusMethodNotAllowed, "请求方法不支持"
 	case Unauthenticated:
 		return http.StatusUnauthorized, "请先登录"
+	case PermissionDenied:
+		return http.StatusForbidden, "当前账号没有活动管理权限"
 	case InvalidCredentials:
 		return http.StatusUnauthorized, "账号或密码错误"
 	case CSRFValidationFailed:
