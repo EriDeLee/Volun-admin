@@ -10,6 +10,7 @@ import (
 
 	"volun-data/internal/auth"
 	"volun-data/internal/dto"
+	"volun-data/internal/errhandler"
 
 	"github.com/gin-gonic/gin"
 )
@@ -42,24 +43,24 @@ func NewRouter(db Pinger, log *slog.Logger, authService *auth.Service) *gin.Engi
 				log.Error("http panic recovered", "request_id", c.GetString("request_id"))
 				c.Abort()
 				if !c.Writer.Written() {
-					respond(c, http.StatusInternalServerError, dto.InternalError, "服务暂时不可用", nil)
+					errhandler.Fail(c, errhandler.InternalError)
 				}
 			}
 		}()
 		c.Next()
 	})
 	r.GET("/healthz", func(c *gin.Context) {
-		respond(c, http.StatusOK, dto.Success, "ok", dto.HealthResponse{Status: "alive"})
+		errhandler.OK(c, dto.HealthResponse{Status: "alive"})
 	})
 	r.GET("/readyz", func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
 		defer cancel()
 		if err := db.PingContext(ctx); err != nil {
 			log.Error("database readiness failed", "request_id", c.GetString("request_id"))
-			respond(c, http.StatusServiceUnavailable, dto.DatabaseUnavailable, "数据库暂时不可用", nil)
+			errhandler.Fail(c, errhandler.DatabaseUnavailable)
 			return
 		}
-		respond(c, http.StatusOK, dto.Success, "ok", dto.HealthResponse{Status: "ready"})
+		errhandler.OK(c, dto.HealthResponse{Status: "ready"})
 	})
 	// Register business and auth routes under this versioned group.
 	api := r.Group("/api/v1")
@@ -70,13 +71,13 @@ func NewRouter(db Pinger, log *slog.Logger, authService *auth.Service) *gin.Engi
 	authRoutes.GET("/sso/start", authService.SSOStart)
 	r.GET("/auth/sso/callback", authService.SSOCallback)
 	api.GET("/ping", func(c *gin.Context) {
-		respond(c, http.StatusOK, dto.Success, "ok", dto.PingResponse{Message: "pong"})
+		errhandler.OK(c, dto.PingResponse{Message: "pong"})
 	})
 	r.NoRoute(func(c *gin.Context) {
-		respond(c, http.StatusNotFound, dto.ResourceNotFound, "接口不存在", nil)
+		errhandler.Fail(c, errhandler.ResourceNotFound)
 	})
 	r.NoMethod(func(c *gin.Context) {
-		respond(c, http.StatusMethodNotAllowed, dto.MethodNotAllowed, "请求方法不支持", nil)
+		errhandler.Fail(c, errhandler.MethodNotAllowed)
 	})
 	return r
 }

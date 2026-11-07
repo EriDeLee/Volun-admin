@@ -13,6 +13,7 @@ import (
 
 	"volun-data/internal/config"
 	"volun-data/internal/dto"
+	"volun-data/internal/errhandler"
 	"volun-data/internal/model"
 	"volun-data/internal/sso"
 
@@ -27,10 +28,6 @@ type Service struct {
 	DB     *gorm.DB
 	Config config.Auth
 	HTTP   *http.Client
-}
-
-func respond(c *gin.Context, status int, code dto.ErrCode, message string, data any) {
-	c.JSON(status, dto.Response{ErrCode: code, Message: message, Data: data, RequestID: c.GetString("request_id")})
 }
 
 func frontendURL(base, path string) string {
@@ -101,27 +98,27 @@ func (s *Service) current(c *gin.Context) (model.User, error) {
 func (s *Service) Login(c *gin.Context) {
 	var req dto.LoginRequest
 	if c.ShouldBindJSON(&req) != nil || req.Username == "" || req.Password == "" {
-		respond(c, 400, 100001, "参数不合法", nil)
+		errhandler.Fail(c, errhandler.InvalidArgument)
 		return
 	}
 	var u model.User
 	if s.DB.Where("username = ? AND status = ? AND password_hash <> ?", strings.TrimSpace(req.Username), "active", "").First(&u).Error != nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
-		respond(c, 401, 200003, "账号或密码错误", nil)
+		errhandler.Fail(c, errhandler.InvalidCredentials)
 		return
 	}
 	if err := s.issue(c, u); err != nil {
-		respond(c, 500, 900001, "服务暂时不可用", nil)
+		errhandler.Fail(c, errhandler.InternalError)
 		return
 	}
-	respond(c, 200, 0, "ok", dto.AuthResponse{User: userJSON(u), AuthMethod: "password"})
+	errhandler.OK(c, dto.AuthResponse{User: userJSON(u), AuthMethod: "password"})
 }
 func (s *Service) Me(c *gin.Context) {
 	u, err := s.current(c)
 	if err != nil {
-		respond(c, 401, 200001, "请先登录", nil)
+		errhandler.Fail(c, errhandler.Unauthenticated)
 		return
 	}
-	respond(c, 200, 0, "ok", dto.AuthResponse{User: userJSON(u), AuthMethod: "session"})
+	errhandler.OK(c, dto.AuthResponse{User: userJSON(u), AuthMethod: "session"})
 }
 func (s *Service) Logout(c *gin.Context) {
 	if ck, err := c.Request.Cookie(cookieName); err == nil {
@@ -129,7 +126,7 @@ func (s *Service) Logout(c *gin.Context) {
 		s.DB.Model(&model.Session{}).Where("token_digest = ?", digest(ck.Value)).Update("revoked_at", now)
 	}
 	http.SetCookie(c.Writer, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: s.Config.CookieSecure, SameSite: http.SameSiteLaxMode})
-	respond(c, 200, 0, "ok", nil)
+	errhandler.OK(c, nil)
 }
 
 func (s *Service) SSOStart(c *gin.Context) {
@@ -254,7 +251,7 @@ func (s *Service) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		u, err := s.current(c)
 		if err != nil {
-			respond(c, 401, 200001, "请先登录", nil)
+			errhandler.Fail(c, errhandler.Unauthenticated)
 			c.Abort()
 			return
 		}
@@ -264,7 +261,7 @@ func (s *Service) Middleware() gin.HandlerFunc {
 }
 func CSRF(c *gin.Context) {
 	if c.Request.Method == "POST" && c.GetHeader("X-CSRF-Token") == "" {
-		respond(c, 403, 200008, "请求校验失败", nil)
+		errhandler.Fail(c, errhandler.CSRFValidationFailed)
 		c.Abort()
 		return
 	}

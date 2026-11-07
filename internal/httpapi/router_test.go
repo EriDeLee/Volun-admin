@@ -17,6 +17,7 @@ import (
 	"volun-data/internal/auth"
 	"volun-data/internal/config"
 	"volun-data/internal/dto"
+	"volun-data/internal/errhandler"
 )
 
 type stubPinger struct{ err error }
@@ -29,15 +30,15 @@ func TestRouterResponsesAndLogRedaction(t *testing.T) {
 		name, method, path string
 		dbError            error
 		status             int
-		code               dto.ErrCode
+		code               errhandler.Code
 	}{
-		{"liveness ignores database outage", "GET", "/healthz", errors.New("offline"), 200, dto.Success},
-		{"ready", "GET", "/readyz", nil, 200, dto.Success},
-		{"database unavailable", "GET", "/readyz", errors.New("private database detail"), 503, dto.DatabaseUnavailable},
-		{"versioned route", "GET", "/api/v1/ping", nil, 200, dto.Success},
-		{"missing route", "GET", "/missing?code=secret-value", nil, 404, dto.ResourceNotFound},
-		{"wrong method", "POST", "/healthz", nil, 405, dto.MethodNotAllowed},
-		{"recovery", "GET", "/panic", nil, 500, dto.InternalError},
+		{"liveness ignores database outage", "GET", "/healthz", errors.New("offline"), 200, errhandler.Success},
+		{"ready", "GET", "/readyz", nil, 200, errhandler.Success},
+		{"database unavailable", "GET", "/readyz", errors.New("private database detail"), 503, errhandler.DatabaseUnavailable},
+		{"versioned route", "GET", "/api/v1/ping", nil, 200, errhandler.Success},
+		{"missing route", "GET", "/missing?code=secret-value", nil, 404, errhandler.ResourceNotFound},
+		{"wrong method", "POST", "/healthz", nil, 405, errhandler.MethodNotAllowed},
+		{"recovery", "GET", "/panic", nil, 500, errhandler.InternalError},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var logs bytes.Buffer
@@ -62,7 +63,7 @@ func TestRouterResponsesAndLogRedaction(t *testing.T) {
 			if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 				t.Fatal(err)
 			}
-			if response.ErrCode != tc.code || response.RequestID == "" || response.RequestID != w.Header().Get("X-Request-ID") {
+			if response.ErrCode != int(tc.code) || response.RequestID == "" || response.RequestID != w.Header().Get("X-Request-ID") {
 				t.Fatalf("unexpected response: %+v", response)
 			}
 			for _, secret := range []string{"secret-value", "private database detail", "private panic detail"} {
