@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm"
 	"volun-data/internal/auth"
 	"volun-data/internal/config"
+	"volun-data/internal/dto"
 )
 
 type stubPinger struct{ err error }
@@ -28,15 +29,15 @@ func TestRouterResponsesAndLogRedaction(t *testing.T) {
 		name, method, path string
 		dbError            error
 		status             int
-		code               ErrCode
+		code               dto.ErrCode
 	}{
-		{"liveness ignores database outage", "GET", "/healthz", errors.New("offline"), 200, Success},
-		{"ready", "GET", "/readyz", nil, 200, Success},
-		{"database unavailable", "GET", "/readyz", errors.New("private database detail"), 503, DatabaseUnavailable},
-		{"versioned route", "GET", "/api/v1/ping", nil, 200, Success},
-		{"missing route", "GET", "/missing?code=secret-value", nil, 404, ResourceNotFound},
-		{"wrong method", "POST", "/healthz", nil, 405, MethodNotAllowed},
-		{"recovery", "GET", "/panic", nil, 500, InternalError},
+		{"liveness ignores database outage", "GET", "/healthz", errors.New("offline"), 200, dto.Success},
+		{"ready", "GET", "/readyz", nil, 200, dto.Success},
+		{"database unavailable", "GET", "/readyz", errors.New("private database detail"), 503, dto.DatabaseUnavailable},
+		{"versioned route", "GET", "/api/v1/ping", nil, 200, dto.Success},
+		{"missing route", "GET", "/missing?code=secret-value", nil, 404, dto.ResourceNotFound},
+		{"wrong method", "POST", "/healthz", nil, 405, dto.MethodNotAllowed},
+		{"recovery", "GET", "/panic", nil, 500, dto.InternalError},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var logs bytes.Buffer
@@ -57,7 +58,7 @@ func TestRouterResponsesAndLogRedaction(t *testing.T) {
 			if w.Code != tc.status {
 				t.Fatalf("status = %d, want %d: %s", w.Code, tc.status, w.Body.String())
 			}
-			var response Response
+			var response dto.Response
 			if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 				t.Fatal(err)
 			}

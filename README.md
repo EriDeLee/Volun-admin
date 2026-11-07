@@ -70,11 +70,17 @@ SSO 使用的 `SSO_CLIENT_ID`、`SSO_CLIENT_SECRET`、`SSO_REDIRECT_URI` 及上�
 cmd/api/              服务入口、启动与退出
 internal/config/      环境变量配置及校验
 internal/database/    GORM 数据库连接器
+internal/model/       GORM 实体，供业务与迁移共用
+internal/dto/         接口请求、响应及 SSO 上游数据结构
 internal/auth/        登录、会话及学校 SSO
+internal/migration/   全局迁移执行器
+internal/migrations/  按版本登记的迁移文件
 internal/httpapi/     路由、中间件及统一响应
 web/                  React 登录页
 docs/                 项目方案与任务拆解
 ```
+
+数据库表结构集中定义在 `internal/model/auth.go`，迁移直接引用 model，不依赖 auth 业务包。接口 DTO 按用途放在 `internal/dto/auth.go`、`sso.go` 和 `response.go`；DTO 不参与 GORM 迁移，用户响应只包含公开字段，不包含密码哈希或会话令牌摘要。
 
 ## 检查
 

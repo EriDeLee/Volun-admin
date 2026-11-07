@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"volun-data/internal/config"
+	"volun-data/internal/dto"
+	"volun-data/internal/model"
 	"volun-data/internal/sso"
 
 	"github.com/gin-gonic/gin"
@@ -21,47 +23,14 @@ import (
 
 const cookieName = "volun_session"
 
-type User struct {
-	Sub          string `gorm:"primaryKey;size:128"`
-	ID           string `gorm:"size:120;index"`
-	Name         string
-	Username     string `gorm:"index;size:120"`
-	PasswordHash string
-	Status       string `gorm:"size:20;index"`
-	Groups       string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-}
-type Session struct {
-	ID          string    `gorm:"primaryKey;size:64"`
-	TokenDigest string    `gorm:"uniqueIndex;size:64"`
-	UserID      string    `gorm:"index;size:128"` // References User.Sub, never the student number.
-	ExpiresAt   time.Time `gorm:"index"`
-	RevokedAt   *time.Time
-	CreatedAt   time.Time
-}
-type LoginTransaction struct {
-	ID          string `gorm:"primaryKey;size:64"`
-	StateDigest string `gorm:"uniqueIndex;size:64"`
-	ReturnTo    string
-	ExpiresAt   time.Time
-	ConsumedAt  *time.Time
-}
 type Service struct {
 	DB     *gorm.DB
 	Config config.Auth
 	HTTP   *http.Client
 }
 
-type apiResponse struct {
-	ErrCode   int    `json:"errcode"`
-	Message   string `json:"message"`
-	Data      any    `json:"data"`
-	RequestID string `json:"request_id"`
-}
-
-func respond(c *gin.Context, status, code int, message string, data any) {
-	c.JSON(status, apiResponse{ErrCode: code, Message: message, Data: data, RequestID: c.GetString("request_id")})
+func respond(c *gin.Context, status int, code dto.ErrCode, message string, data any) {
+	c.JSON(status, dto.Response{ErrCode: code, Message: message, Data: data, RequestID: c.GetString("request_id")})
 }
 
 func frontendURL(base, path string) string {
@@ -79,15 +48,15 @@ func (s *Service) SeedDev() error {
 	if err != nil {
 		return err
 	}
-	var user User
+	var user model.User
 	err = s.DB.Where("username = ? AND password_hash <> ?", s.Config.DevUsername, "").First(&user).Error
 	if err == nil {
-		return s.DB.Model(&User{}).Where("sub = ?", user.Sub).Updates(map[string]any{"password_hash": string(hash), "status": "active"}).Error
+		return s.DB.Model(&model.User{}).Where("sub = ?", user.Sub).Updates(map[string]any{"password_hash": string(hash), "status": "active"}).Error
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
-	return s.DB.Create(&User{Sub: "local:" + mustToken(16), ID: s.Config.DevUsername, Name: "开发管理员", Username: s.Config.DevUsername, PasswordHash: string(hash), Status: "active", Groups: "super_admin"}).Error
+	return s.DB.Create(&model.User{Sub: "local:" + mustToken(16), ID: s.Config.DevUsername, Name: "开发管理员", Username: s.Config.DevUsername, PasswordHash: string(hash), Status: "active", Groups: "super_admin"}).Error
 }
 func randomToken(n int) (string, error) {
 	b := make([]byte, n)
@@ -95,50 +64,47 @@ func randomToken(n int) (string, error) {
 	return hex.EncodeToString(b), err
 }
 func digest(v string) string { b := sha256.Sum256([]byte(v)); return hex.EncodeToString(b[:]) }
-func userJSON(u User) gin.H {
+func userJSON(u model.User) dto.UserResponse {
 	groups := []string{}
 	if u.Groups != "" {
 		groups = strings.Split(u.Groups, ",")
 	}
-	return gin.H{"sub": u.Sub, "id": u.ID, "name": u.Name, "username": u.Username, "groups": groups}
+	return dto.UserResponse{Sub: u.Sub, ID: u.ID, Name: u.Name, Username: u.Username, Groups: groups}
 }
 
-func (s *Service) issue(c *gin.Context, u User) error {
+func (s *Service) issue(c *gin.Context, u model.User) error {
 	token, err := randomToken(32)
 	if err != nil {
 		return err
 	}
 	now := time.Now().UTC()
-	if err = s.DB.Create(&Session{ID: token[:32], TokenDigest: digest(token), UserID: u.Sub, ExpiresAt: now.Add(s.Config.SessionTTL), CreatedAt: now}).Error; err != nil {
+	if err = s.DB.Create(&model.Session{ID: token[:32], TokenDigest: digest(token), UserID: u.Sub, ExpiresAt: now.Add(s.Config.SessionTTL), CreatedAt: now}).Error; err != nil {
 		return err
 	}
 	http.SetCookie(c.Writer, &http.Cookie{Name: cookieName, Value: token, Path: "/", HttpOnly: true, Secure: s.Config.CookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: int(s.Config.SessionTTL.Seconds())})
 	return nil
 }
-func (s *Service) current(c *gin.Context) (User, error) {
+func (s *Service) current(c *gin.Context) (model.User, error) {
 	ck, err := c.Request.Cookie(cookieName)
 	if err != nil {
-		return User{}, gorm.ErrRecordNotFound
+		return model.User{}, gorm.ErrRecordNotFound
 	}
-	var sess Session
+	var sess model.Session
 	if err = s.DB.Where("token_digest = ? AND revoked_at IS NULL AND expires_at > ?", digest(ck.Value), time.Now().UTC()).First(&sess).Error; err != nil {
-		return User{}, err
+		return model.User{}, err
 	}
-	var u User
+	var u model.User
 	err = s.DB.Where("sub = ? AND status = ?", sess.UserID, "active").First(&u).Error
 	return u, err
 }
 
 func (s *Service) Login(c *gin.Context) {
-	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
+	var req dto.LoginRequest
 	if c.ShouldBindJSON(&req) != nil || req.Username == "" || req.Password == "" {
 		respond(c, 400, 100001, "参数不合法", nil)
 		return
 	}
-	var u User
+	var u model.User
 	if s.DB.Where("username = ? AND status = ? AND password_hash <> ?", strings.TrimSpace(req.Username), "active", "").First(&u).Error != nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
 		respond(c, 401, 200003, "账号或密码错误", nil)
 		return
@@ -147,7 +113,7 @@ func (s *Service) Login(c *gin.Context) {
 		respond(c, 500, 900001, "服务暂时不可用", nil)
 		return
 	}
-	respond(c, 200, 0, "ok", gin.H{"user": userJSON(u), "auth_method": "password"})
+	respond(c, 200, 0, "ok", dto.AuthResponse{User: userJSON(u), AuthMethod: "password"})
 }
 func (s *Service) Me(c *gin.Context) {
 	u, err := s.current(c)
@@ -155,12 +121,12 @@ func (s *Service) Me(c *gin.Context) {
 		respond(c, 401, 200001, "请先登录", nil)
 		return
 	}
-	respond(c, 200, 0, "ok", gin.H{"user": userJSON(u), "auth_method": "session"})
+	respond(c, 200, 0, "ok", dto.AuthResponse{User: userJSON(u), AuthMethod: "session"})
 }
 func (s *Service) Logout(c *gin.Context) {
 	if ck, err := c.Request.Cookie(cookieName); err == nil {
 		now := time.Now().UTC()
-		s.DB.Model(&Session{}).Where("token_digest = ?", digest(ck.Value)).Update("revoked_at", now)
+		s.DB.Model(&model.Session{}).Where("token_digest = ?", digest(ck.Value)).Update("revoked_at", now)
 	}
 	http.SetCookie(c.Writer, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: s.Config.CookieSecure, SameSite: http.SameSiteLaxMode})
 	respond(c, 200, 0, "ok", nil)
@@ -182,7 +148,7 @@ func (s *Service) SSOStart(c *gin.Context) {
 	if !strings.HasPrefix(ret, "/") || strings.HasPrefix(ret, "//") {
 		ret = "/"
 	}
-	if err = s.DB.Create(&LoginTransaction{ID: state[:32], StateDigest: digest(state), ReturnTo: ret, ExpiresAt: time.Now().UTC().Add(5 * time.Minute)}).Error; err != nil {
+	if err = s.DB.Create(&model.LoginTransaction{ID: state[:32], StateDigest: digest(state), ReturnTo: ret, ExpiresAt: time.Now().UTC().Add(5 * time.Minute)}).Error; err != nil {
 		slog.Error("SSO start failed: cannot save login transaction", "request_id", c.GetString("request_id"))
 		c.Redirect(303, frontendURL(s.Config.FrontendURL, "/login?sso=error"))
 		return
@@ -219,7 +185,7 @@ func (s *Service) SSOCallback(c *gin.Context) {
 		fail()
 		return
 	}
-	var tx LoginTransaction
+	var tx model.LoginTransaction
 	if s.DB.Where("state_digest = ? AND consumed_at IS NULL AND expires_at > ?", digest(state), time.Now().UTC()).First(&tx).Error != nil {
 		fail()
 		return
@@ -237,9 +203,7 @@ func (s *Service) SSOCallback(c *gin.Context) {
 		return
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	var tok struct {
-		AccessToken string `json:"access_token"`
-	}
+	var tok dto.SSOTokenResponse
 	if !sso.Upstream(c, s.HTTP, "token", req, &tok) || tok.AccessToken == "" {
 		fail()
 		return
@@ -250,12 +214,7 @@ func (s *Service) SSOCallback(c *gin.Context) {
 		return
 	}
 	req.Header.Set("Authorization", "Bearer "+tok.AccessToken)
-	var info struct {
-		Sub           string `json:"sub"`
-		Username      string `json:"username"`
-		Name          string `json:"name"`
-		StudentNumber string `json:"student_number"`
-	}
+	var info dto.SSOUserInfoResponse
 	if !sso.Upstream(c, s.HTTP, "userinfo", req, &info) || info.Sub == "" {
 		fail()
 		return
@@ -265,10 +224,10 @@ func (s *Service) SSOCallback(c *gin.Context) {
 	if username == "" {
 		username = "sso_" + info.Sub
 	}
-	var u User
+	var u model.User
 	err = s.DB.Where("sub = ?", info.Sub).First(&u).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		u = User{Sub: info.Sub, ID: info.StudentNumber, Name: info.Name, Username: username, Status: "active", Groups: "formal_user"}
+		u = model.User{Sub: info.Sub, ID: info.StudentNumber, Name: info.Name, Username: username, Status: "active", Groups: "formal_user"}
 		if s.DB.Create(&u).Error != nil {
 			fail()
 			return

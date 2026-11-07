@@ -19,6 +19,7 @@ import (
 	"volun-data/internal/httpapi"
 	"volun-data/internal/migration"
 	"volun-data/internal/migrations"
+	"volun-data/internal/model"
 	"volun-data/internal/observability"
 )
 
@@ -69,7 +70,7 @@ func run(log *slog.Logger) error {
 		if err := authService.SeedDev(); err != nil {
 			return fmt.Errorf("seed development account: %w", err)
 		}
-		var devUser auth.User
+		var devUser model.User
 		if err := db.Where("username = ?", cfg.Auth.DevUsername).First(&devUser).Error; err != nil {
 			return fmt.Errorf("load development account: %w", err)
 		}

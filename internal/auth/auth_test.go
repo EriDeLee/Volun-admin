@@ -17,6 +17,8 @@ import (
 	"gorm.io/gorm"
 	"volun-data/internal/config"
 	"volun-data/internal/migration"
+	"volun-data/internal/migrations"
+	"volun-data/internal/model"
 )
 
 func testService(t *testing.T, transport http.RoundTripper) *Service {
@@ -32,7 +34,7 @@ func testService(t *testing.T, transport http.RoundTripper) *Service {
 	pool.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = pool.Close() })
 	s := &Service{DB: db, Config: config.Auth{SessionTTL: time.Hour, SSOClientID: "client-test", SSOClientSecret: "secret-test", SSORedirectURI: "http://localhost:8080/auth/sso/callback", SSOScopes: "openid profile email", SSOAuthorizeURL: "https://issuer.test/authorize", SSOTokenURL: "https://issuer.test/token", SSOUserInfoURL: "https://issuer.test/userinfo"}, HTTP: &http.Client{Transport: transport}}
-	if err := migration.Run(s.DB, testSteps()); err != nil {
+	if err := migration.Run(s.DB, migrations.All()); err != nil {
 		t.Fatal(err)
 	}
 	return s
@@ -95,7 +97,7 @@ func TestSSOCallbackExchangesTokenAndCreatesSession(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	t.Cleanup(func() { slog.SetDefault(previous) })
 	state := "state-test"
-	if err := s.DB.Create(&LoginTransaction{ID: "tx", StateDigest: digest(state), ReturnTo: "/", ExpiresAt: time.Now().Add(time.Minute)}).Error; err != nil {
+	if err := s.DB.Create(&model.LoginTransaction{ID: "tx", StateDigest: digest(state), ReturnTo: "/", ExpiresAt: time.Now().Add(time.Minute)}).Error; err != nil {
 		t.Fatal(err)
 	}
 	r := gin.New()
@@ -119,25 +121,25 @@ func TestSSOCallbackExchangesTokenAndCreatesSession(t *testing.T) {
 		t.Fatalf("session lookup: %d %s", me.Code, me.Body.String())
 	}
 	var count int64
-	s.DB.Model(&User{}).Where("username = ?", "student1").Count(&count)
+	s.DB.Model(&model.User{}).Where("username = ?", "student1").Count(&count)
 	if count != 1 {
 		t.Fatalf("users = %d", count)
 	}
-	var user User
+	var user model.User
 	if err := s.DB.First(&user, "sub = ?", "sub-1").Error; err != nil {
 		t.Fatal(err)
 	}
 	if user.ID != "00123456" || user.Groups != "formal_user" {
 		t.Fatalf("incorrect student identity: %+v", userJSON(user))
 	}
-	var session Session
+	var session model.Session
 	if err := s.DB.First(&session).Error; err != nil {
 		t.Fatal(err)
 	}
 	if session.UserID != "sub-1" {
 		t.Fatal("session must reference sub")
 	}
-	var tx LoginTransaction
+	var tx model.LoginTransaction
 	s.DB.First(&tx, "id = ?", "tx")
 	if tx.ConsumedAt == nil {
 		t.Fatal("transaction was not consumed")
@@ -165,7 +167,7 @@ func TestPasswordLoginAndLogout(t *testing.T) {
 		t.Fatal(err)
 	}
 	var adminCount int64
-	if err := s.DB.Model(&User{}).Where("username = ?", s.Config.DevUsername).Count(&adminCount).Error; err != nil {
+	if err := s.DB.Model(&model.User{}).Where("username = ?", s.Config.DevUsername).Count(&adminCount).Error; err != nil {
 		t.Fatal(err)
 	}
 	if adminCount != 1 {
@@ -202,7 +204,7 @@ func TestPasswordLoginAndLogout(t *testing.T) {
 		}
 	}
 	var count int64
-	if err := s.DB.Model(&Session{}).Where("revoked_at IS NOT NULL").Count(&count).Error; err != nil {
+	if err := s.DB.Model(&model.Session{}).Where("revoked_at IS NOT NULL").Count(&count).Error; err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 {
@@ -232,7 +234,7 @@ func TestMigrateLegacyUserPrimaryKey(t *testing.T) {
 	}
 	s := &Service{DB: db}
 	for range 2 {
-		if err := migration.Run(s.DB, testSteps()); err != nil {
+		if err := migration.Run(s.DB, migrations.All()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -243,14 +245,14 @@ func TestMigrateLegacyUserPrimaryKey(t *testing.T) {
 	if versions != 2 {
 		t.Fatalf("migration versions = %d, want 2", versions)
 	}
-	var user User
+	var user model.User
 	if err := db.First(&user, "sub = ?", "legacy-key").Error; err != nil {
 		t.Fatal(err)
 	}
 	if user.Username != "admin" {
 		t.Fatal("legacy user lost")
 	}
-	columns, err := db.Migrator().ColumnTypes(&User{})
+	columns, err := db.Migrator().ColumnTypes(&model.User{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,27 +265,6 @@ func TestMigrateLegacyUserPrimaryKey(t *testing.T) {
 			t.Fatal("student id must not be primary key")
 		}
 	}
-}
-
-func testSteps() []migration.Step {
-	return []migration.Step{{Version: 0, Name: "auth_initial_schema", Up: func(db *gorm.DB) error {
-		if db.Migrator().HasTable(&User{}) && !db.Migrator().HasColumn(&User{}, "sub") {
-			return nil
-		}
-		return db.AutoMigrate(&User{}, &Session{}, &LoginTransaction{})
-	}}, {Version: 1, Name: "auth_sub_primary_key", Up: func(db *gorm.DB) error {
-		if db.Migrator().HasTable(&User{}) && !db.Migrator().HasColumn(&User{}, "sub") {
-			if err := db.Migrator().RenameColumn(&User{}, "id", "sub"); err != nil {
-				return err
-			}
-		}
-		if db.Migrator().HasIndex(&User{}, "idx_users_username") {
-			if err := db.Migrator().DropIndex(&User{}, "idx_users_username"); err != nil {
-				return err
-			}
-		}
-		return db.AutoMigrate(&User{}, &Session{}, &LoginTransaction{})
-	}}}
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

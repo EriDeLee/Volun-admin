@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"volun-data/internal/auth"
+	"volun-data/internal/dto"
 
 	"github.com/gin-gonic/gin"
 )
@@ -41,24 +42,24 @@ func NewRouter(db Pinger, log *slog.Logger, authService *auth.Service) *gin.Engi
 				log.Error("http panic recovered", "request_id", c.GetString("request_id"))
 				c.Abort()
 				if !c.Writer.Written() {
-					respond(c, http.StatusInternalServerError, InternalError, "服务暂时不可用", nil)
+					respond(c, http.StatusInternalServerError, dto.InternalError, "服务暂时不可用", nil)
 				}
 			}
 		}()
 		c.Next()
 	})
 	r.GET("/healthz", func(c *gin.Context) {
-		respond(c, http.StatusOK, Success, "ok", gin.H{"status": "alive"})
+		respond(c, http.StatusOK, dto.Success, "ok", dto.HealthResponse{Status: "alive"})
 	})
 	r.GET("/readyz", func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
 		defer cancel()
 		if err := db.PingContext(ctx); err != nil {
 			log.Error("database readiness failed", "request_id", c.GetString("request_id"))
-			respond(c, http.StatusServiceUnavailable, DatabaseUnavailable, "数据库暂时不可用", nil)
+			respond(c, http.StatusServiceUnavailable, dto.DatabaseUnavailable, "数据库暂时不可用", nil)
 			return
 		}
-		respond(c, http.StatusOK, Success, "ok", gin.H{"status": "ready"})
+		respond(c, http.StatusOK, dto.Success, "ok", dto.HealthResponse{Status: "ready"})
 	})
 	// Register business and auth routes under this versioned group.
 	api := r.Group("/api/v1")
@@ -69,13 +70,13 @@ func NewRouter(db Pinger, log *slog.Logger, authService *auth.Service) *gin.Engi
 	authRoutes.GET("/sso/start", authService.SSOStart)
 	r.GET("/auth/sso/callback", authService.SSOCallback)
 	api.GET("/ping", func(c *gin.Context) {
-		respond(c, http.StatusOK, Success, "ok", gin.H{"message": "pong"})
+		respond(c, http.StatusOK, dto.Success, "ok", dto.PingResponse{Message: "pong"})
 	})
 	r.NoRoute(func(c *gin.Context) {
-		respond(c, http.StatusNotFound, ResourceNotFound, "接口不存在", nil)
+		respond(c, http.StatusNotFound, dto.ResourceNotFound, "接口不存在", nil)
 	})
 	r.NoMethod(func(c *gin.Context) {
-		respond(c, http.StatusMethodNotAllowed, MethodNotAllowed, "请求方法不支持", nil)
+		respond(c, http.StatusMethodNotAllowed, dto.MethodNotAllowed, "请求方法不支持", nil)
 	})
 	return r
 }

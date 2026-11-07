@@ -5,8 +5,8 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
-	"volun-data/internal/auth"
 	"volun-data/internal/migration"
+	"volun-data/internal/model"
 )
 
 func TestInitializeV0AndUpgradeOnce(t *testing.T) {
@@ -23,8 +23,8 @@ func TestInitializeV0AndUpgradeOnce(t *testing.T) {
 	if err := migration.Run(db, All()[:1]); err != nil {
 		t.Fatal(err)
 	}
-	for _, model := range []any{&auth.User{}, &auth.Session{}, &auth.LoginTransaction{}} {
-		if !db.Migrator().HasTable(model) {
+	for _, entity := range []any{&model.User{}, &model.Session{}, &model.LoginTransaction{}} {
+		if !db.Migrator().HasTable(entity) {
 			t.Fatal("v0 did not initialize authentication schema")
 		}
 	}

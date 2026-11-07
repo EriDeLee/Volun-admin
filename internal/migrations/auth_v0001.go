@@ -2,8 +2,8 @@ package migrations
 
 import (
 	"gorm.io/gorm"
-	"volun-data/internal/auth"
 	"volun-data/internal/migration"
+	"volun-data/internal/model"
 )
 
 func All() []migration.Step {
@@ -11,15 +11,15 @@ func All() []migration.Step {
 }
 
 func authV1(db *gorm.DB) error {
-	if db.Migrator().HasTable(&auth.User{}) && !db.Migrator().HasColumn(&auth.User{}, "sub") {
-		if err := db.Migrator().RenameColumn(&auth.User{}, "id", "sub"); err != nil {
+	if db.Migrator().HasTable(&model.User{}) && !db.Migrator().HasColumn(&model.User{}, "sub") {
+		if err := db.Migrator().RenameColumn(&model.User{}, "id", "sub"); err != nil {
 			return err
 		}
 	}
-	if db.Migrator().HasIndex(&auth.User{}, "idx_users_username") {
-		if err := db.Migrator().DropIndex(&auth.User{}, "idx_users_username"); err != nil {
+	if db.Migrator().HasIndex(&model.User{}, "idx_users_username") {
+		if err := db.Migrator().DropIndex(&model.User{}, "idx_users_username"); err != nil {
 			return err
 		}
 	}
-	return db.AutoMigrate(&auth.User{}, &auth.Session{}, &auth.LoginTransaction{})
+	return db.AutoMigrate(&model.User{}, &model.Session{}, &model.LoginTransaction{})
 }
