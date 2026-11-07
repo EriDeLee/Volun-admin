@@ -6,7 +6,6 @@ type LoginRequest struct {
 }
 
 type UserResponse struct {
-	Sub      string   `json:"sub"`
 	ID       string   `json:"id"`
 	Name     string   `json:"name"`
 	Username string   `json:"username"`
@@ -14,6 +13,11 @@ type UserResponse struct {
 }
 
 type AuthResponse struct {
-	User       UserResponse `json:"user"`
-	AuthMethod string       `json:"auth_method"`
+	User                  UserResponse `json:"user"`
+	AuthMethod            string       `json:"auth_method"`
+	PasswordSetupRequired bool         `json:"password_setup_required"`
+}
+
+type SetPasswordRequest struct {
+	Password string `json:"password"`
 }

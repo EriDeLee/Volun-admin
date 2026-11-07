@@ -64,6 +64,8 @@ go run ./cmd/api
 
 SSO 使用的 `SSO_CLIENT_ID`、`SSO_CLIENT_SECRET`、`SSO_REDIRECT_URI` 及上游地址通过环境变量配置；连接池、超时和变量清单见 [`.env.example`](.env.example)。生产部署应按环境配置 TLS、证书和可信代理。
 
+新建的 SSO 用户首次登录后需设置 12–72 字节的平台密码，设置前不能进行密码登录或访问受保护路由；此前已有账号不受影响。用户接口不返回平台内部 `sub`。
+
 ## 目录结构
 
 ```text
@@ -80,7 +82,7 @@ web/                  React 登录页
 docs/                 项目方案与任务拆解
 ```
 
-数据库表结构集中定义在 `internal/model/auth.go`，迁移直接引用 model，不依赖 auth 业务包。接口 DTO 按用途放在 `internal/dto/auth.go`、`sso.go` 和 `response.go`；DTO 不参与 GORM 迁移，用户响应只包含公开字段，不包含密码哈希或会话令牌摘要。
+数据库表结构集中定义在 `internal/model/auth.go`，迁移直接引用 model，不依赖 auth 业务包。接口 DTO 按用途放在 `internal/dto/auth.go`、`sso.go` 和 `response.go`；DTO 不参与 GORM 迁移，用户响应不包含内部 sub、密码哈希或会话令牌摘要。
 
 ## 检查
 
@@ -90,7 +92,7 @@ docs/                 项目方案与任务拆解
 
 开发数据库默认是 `data/volun-data.db`（SQLite），通过 GORM 访问；生产使用 PostgreSQL。`users.sub` 是主键，`users.id` 是学号，`sessions.user_id` 关联的是 sub。旧本地主键保留原值，不会凭账号名自动合并已有 SSO 身份。
 
-迁移由全局 `internal/migration/runner.go` 管理，具体版本文件放在 `internal/migrations/`（当前为 `auth_v0000.go` ???? `auth_v0001.go` ????），`schema_migrations` 保存 version、name、applied_at。当前版本1兼容旧表并建立 sub 主键结构；升级在事务中执行，已记录版本不再重复执行。新增表结构需追加新编号迁移，不能修改已发布版本含义；暂不提供自动降级，数据库版本高于程序时启动失败。正式升级前按部署流程备份。
+迁移由全局 `internal/migration/runner.go` 管理，具体版本文件放在 `internal/migrations/`，`schema_migrations` 保存 version、name、applied_at。版本1兼容旧表并建立内部 sub 主键结构；版本2新增 SSO 首次登录必须设置密码标记。升级在事务中执行，已记录版本不再重复执行。新增表结构需追加新编号迁移，不能修改已发布版本含义；暂不提供自动降级，数据库版本高于程序时启动失败。正式升级前按部署流程备份。
 
 全局 `internal/observability/upstream.go` 负责 SSO 上游诊断和前端安全跳转，不依赖 auth 业务类型。在 `.env` 设置 `LOG_LEVEL=debug` 后重启，可查看 SSO 授权端点、client_id、redirect_uri、scope、回调参数是否存在、state 校验、Token/UserInfo 上游地址、HTTP 状态、耗时、响应字段名及本地身份解析和最终跳转。日志不会输出 client_secret、code、state、nonce、Token、Cookie、原始响应正文。通过 request_id 关联同一回调中的阶段；默认 info 不输出这些调试细节。
 

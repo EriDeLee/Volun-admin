@@ -722,6 +722,158 @@ input:focus-visible {
   color: #79869b;
   font-size: 10px;
 }
+.setup-page {
+  min-height: 100vh;
+  background: #f5f7fb;
+  padding: 34px 6vw;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+}
+.setup-header {
+  width: min(1080px, 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.setup-verified {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #18815c;
+  font-size: 12px;
+}
+.setup-verified .icon {
+  width: 16px;
+  height: 16px;
+}
+.setup-card {
+  width: min(478px, 100%);
+  margin: auto;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 37px 40px;
+  box-shadow: 0 12px 42px #2035550a;
+}
+.setup-icon {
+  width: 47px;
+  height: 47px;
+  border-radius: 10px;
+  background: #edf3ff;
+  color: var(--blue);
+  display: grid;
+  place-items: center;
+  margin-bottom: 20px;
+}
+.setup-icon .icon {
+  width: 23px;
+  height: 23px;
+}
+.setup-eyebrow {
+  font-size: 11px;
+  color: var(--blue);
+  font-weight: 600;
+}
+.setup-card h1 {
+  font-size: 25px;
+  margin: 6px 0 9px;
+}
+.setup-intro {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.9;
+}
+.setup-account {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 13px;
+  margin: 22px 0;
+}
+.setup-account > div {
+  min-width: 0;
+}
+.setup-account strong,
+.setup-account small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.setup-account strong {
+  font-size: 12px;
+}
+.setup-account small {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+.setup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.setup-form label {
+  font-size: 12px;
+  font-weight: 550;
+  margin-top: 4px;
+}
+.setup-form > input,
+.setup-form .password-field input {
+  min-width: 0;
+  width: 100%;
+  height: 44px;
+  border: 1px solid #dce3ec;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+.setup-form .password-field input {
+  padding-right: 45px;
+}
+.setup-form .button {
+  width: 100%;
+  margin-top: 7px;
+  min-height: 45px;
+}
+.password-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.8;
+  margin-top: 5px;
+}
+.password-hint .icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  margin-top: 2px;
+}
+.setup-logout {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 18px auto 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 7px;
+}
+.setup-logout:hover {
+  color: var(--blue);
+}
+.setup-logout .icon {
+  width: 15px;
+  height: 15px;
+}
+.setup-footer {
+  font-size: 10px;
+  color: #79869b;
+}
 @media (min-width: 1600px) {
   .story-copy {
     padding: 90px 0;
@@ -770,6 +922,22 @@ input:focus-visible {
   }
 }
 @media (max-width: 760px) {
+  .setup-page {
+    padding: 22px 18px;
+    min-height: 100dvh;
+  }
+  .setup-card {
+    padding: 29px 23px;
+  }
+  .setup-header .brand strong {
+    font-size: 15px;
+  }
+  .setup-verified {
+    font-size: 10px;
+  }
+  .setup-card h1 {
+    font-size: 23px;
+  }
   .login-page {
     grid-template-columns: 1fr;
     min-height: 100dvh;

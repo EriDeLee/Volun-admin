@@ -128,6 +128,8 @@ export default function App() {
   const [form, setForm] = useState({ username: "", password: "" }),
     [visible, setVisible] = useState(false),
     [pending, setPending] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [notice, setNotice] = useState(""),
     [updated, setUpdated] = useState(null);
   const busy = useRef(false);
@@ -151,7 +153,7 @@ export default function App() {
       if (!data?.user) throw new Error("无法读取账号信息，请重试。");
       setSession(data);
       setUpdated(new Date());
-      setPath("/profile");
+      setPath(data.password_setup_required ? "/set-password" : "/profile");
       if (!initial) setNotice("个人信息已更新。");
     } catch (e) {
       if (e.status === 401) {
@@ -188,7 +190,7 @@ export default function App() {
       setUpdated(new Date());
       setForm({ username: "", password: "" });
       setVisible(false);
-      setPath("/profile");
+      setPath(data.password_setup_required ? "/set-password" : "/profile");
     } catch (e) {
       setError(e.message);
       setForm((f) => ({ ...f, password: "" }));
@@ -220,6 +222,148 @@ export default function App() {
       setPending("");
     }
   };
+  const setInitialPassword = async (e) => {
+    e.preventDefault();
+    if (busy.current) return;
+    setError("");
+    const length = new TextEncoder().encode(newPassword).length;
+    if (length < 12 || length > 72) {
+      setError("密码需为 12 至 72 个字节。");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("两次输入的密码不一致，请重新确认。");
+      return;
+    }
+    busy.current = true;
+    setPending("set-password");
+    try {
+      const data = await api("/auth/setup-password", {
+        method: "POST",
+        body: JSON.stringify({ password: newPassword }),
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+      });
+      if (data.password_setup_required)
+        throw new Error("密码尚未设置成功，请重试。");
+      setSession(data);
+      setUpdated(new Date());
+      setNewPassword("");
+      setConfirmPassword("");
+      setPath("/profile");
+    } catch (e) {
+      setError(
+        e.status === 401
+          ? "登录已失效，请重新使用学校统一认证。"
+          : e.status === 409
+            ? "密码已设置，请重新登录。"
+            : e.status === 400
+              ? "密码格式不符合要求，请检查后重试。"
+              : e.message,
+      );
+    } finally {
+      busy.current = false;
+      setPending("");
+    }
+  };
+  if (session?.password_setup_required)
+    return (
+      <main className="setup-page">
+        <header className="setup-header">
+          <Brand />
+          <span className="setup-verified">
+            <Icon name="check" />
+            学校身份已验证
+          </span>
+        </header>
+        <section className="setup-card">
+          <span className="setup-icon">
+            <Icon name="shield" />
+          </span>
+          <p className="setup-eyebrow">首次登录 · 完成账号设置</p>
+          <h1>请设置登录密码</h1>
+          <p className="setup-intro">
+            学校身份验证已完成。设置平台密码后，即可使用学校统一认证或账号密码登录。
+          </p>
+          <div className="setup-account">
+            <span className="avatar">
+              {(session.user.name || session.user.username || "用").slice(0, 1)}
+            </span>
+            <div>
+              <strong>{session.user.name || "学校认证用户"}</strong>
+              <small>
+                平台登录账号：{session.user.username || "请联系管理员确认"}
+              </small>
+            </div>
+          </div>
+          <form onSubmit={setInitialPassword} className="setup-form">
+            <label htmlFor="new-password">新密码</label>
+            <div className="password-field">
+              <input
+                id="new-password"
+                type={visible ? "text" : "password"}
+                autoComplete="new-password"
+                required
+                minLength={12}
+                maxLength={72}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="至少 12 个字符"
+                disabled={!!pending}
+              />
+              <button
+                className="password-toggle"
+                type="button"
+                aria-label={visible ? "隐藏密码" : "显示密码"}
+                aria-pressed={visible}
+                onClick={() => setVisible(!visible)}
+              >
+                <Icon name="eye" />
+              </button>
+            </div>
+            <label htmlFor="confirm-password">确认新密码</label>
+            <input
+              id="confirm-password"
+              type={visible ? "text" : "password"}
+              autoComplete="new-password"
+              required
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="再次输入新密码"
+              disabled={!!pending}
+            />
+            <p className="password-hint">
+              <Icon name="info" />
+              密码长度为 12 至 72
+              字节（中文字符会占用多个字节）。请勿使用学校账号密码。
+            </p>
+            {error && (
+              <p className="error" role="alert">
+                {error}
+              </p>
+            )}
+            <button
+              className="button primary"
+              type="submit"
+              disabled={!!pending}
+            >
+              {pending === "set-password" ? "正在安全保存…" : "设置密码并继续"}
+              <Icon name="arrow" />
+            </button>
+          </form>
+          <button
+            className="setup-logout"
+            onClick={logout}
+            disabled={!!pending}
+          >
+            <Icon name="logout" />
+            退出并稍后设置
+          </button>
+        </section>
+        <footer className="setup-footer">
+          北京航空航天大学 · 志愿服务项目管理平台
+        </footer>
+      </main>
+    );
   if (checking || startupError)
     return (
       <main className="loading-page">
@@ -478,10 +622,6 @@ export default function App() {
                 <div>
                   <dt>学号 / 人员编号</dt>
                   <dd>{user.id || "未提供"}</dd>
-                </div>
-                <div>
-                  <dt>平台用户标识</dt>
-                  <dd className="identifier">{user.sub || "未提供"}</dd>
                 </div>
               </dl>
               <p className="panel-note">

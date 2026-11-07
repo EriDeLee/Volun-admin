@@ -4,6 +4,9 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App.jsx";
 
+if (!globalThis.TextEncoder)
+  globalThis.TextEncoder = (await import("node:util")).TextEncoder;
+
 const session = {
   user: {
     sub: "local-001",
@@ -33,6 +36,8 @@ test("restores identity from the server with leading-zero ID and actual groups",
   render(<App />);
   await screen.findByRole("heading", { name: "个人信息" });
   expect(screen.getByText("001234")).toBeTruthy();
+  expect(document.body.textContent).not.toContain("local-001");
+  expect(screen.queryByText("平台用户标识")).toBeNull();
   expect(screen.getAllByText("活动管理员").length).toBeGreaterThan(0);
   expect(screen.getByText("已通过会话验证")).toBeTruthy();
   expect(location.pathname).toBe("/profile");
@@ -142,4 +147,57 @@ test("blocks repeated login while the request is pending", async () => {
   await waitFor(() =>
     expect(screen.getByRole("heading", { name: "个人信息" })).toBeTruthy(),
   );
+});
+
+test("new SSO identity is sent to the required password setup page and then to profile", async () => {
+  const firstLogin = { ...session, password_setup_required: true };
+  const completed = {
+    ...session,
+    auth_method: "sso",
+    password_setup_required: false,
+  };
+  fetch
+    .mockResolvedValueOnce(reply(firstLogin))
+    .mockResolvedValueOnce(reply(completed));
+  const user = userEvent.setup();
+  render(<App />);
+  await screen.findByRole("heading", { name: "请设置登录密码" });
+  expect(document.body.textContent).not.toContain("local-001");
+  expect(screen.getByText("平台登录账号：tester")).toBeTruthy();
+  expect(location.pathname).toBe("/set-password");
+  await user.type(
+    screen.getByLabelText("新密码"),
+    "a-secure-password-for-this-user",
+  );
+  await user.type(
+    screen.getByLabelText("确认新密码"),
+    "a-secure-password-for-this-user",
+  );
+  await user.click(screen.getByRole("button", { name: "设置密码并继续" }));
+  await screen.findByRole("heading", { name: "个人信息" });
+  expect(location.pathname).toBe("/profile");
+  expect(fetch.mock.calls[1][0]).toBe("/api/v1/auth/setup-password");
+  expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({
+    password: "a-secure-password-for-this-user",
+  });
+});
+
+test("password setup rejects mismatched confirmations without sending a request", async () => {
+  fetch.mockResolvedValue(reply({ ...session, password_setup_required: true }));
+  const user = userEvent.setup();
+  render(<App />);
+  await screen.findByRole("heading", { name: "请设置登录密码" });
+  await user.type(
+    screen.getByLabelText("新密码"),
+    "a-secure-password-for-this-user",
+  );
+  await user.type(
+    screen.getByLabelText("确认新密码"),
+    "a-different-password-value",
+  );
+  await user.click(screen.getByRole("button", { name: "设置密码并继续" }));
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "两次输入的密码不一致",
+  );
+  expect(fetch).toHaveBeenCalledTimes(1);
 });

@@ -66,7 +66,7 @@ func userJSON(u model.User) dto.UserResponse {
 	if u.Groups != "" {
 		groups = strings.Split(u.Groups, ",")
 	}
-	return dto.UserResponse{Sub: u.Sub, ID: u.ID, Name: u.Name, Username: u.Username, Groups: groups}
+	return dto.UserResponse{ID: u.ID, Name: u.Name, Username: u.Username, Groups: groups}
 }
 
 func (s *Service) issue(c *gin.Context, u model.User) error {
@@ -102,7 +102,7 @@ func (s *Service) Login(c *gin.Context) {
 		return
 	}
 	var u model.User
-	if s.DB.Where("username = ? AND status = ? AND password_hash <> ?", strings.TrimSpace(req.Username), "active", "").First(&u).Error != nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
+	if s.DB.Where("username = ? AND status = ? AND password_hash <> ? AND password_setup_required = ?", strings.TrimSpace(req.Username), "active", "", false).First(&u).Error != nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
 		errhandler.Fail(c, errhandler.InvalidCredentials)
 		return
 	}
@@ -110,7 +110,7 @@ func (s *Service) Login(c *gin.Context) {
 		errhandler.Fail(c, errhandler.InternalError)
 		return
 	}
-	errhandler.OK(c, dto.AuthResponse{User: userJSON(u), AuthMethod: "password"})
+	errhandler.OK(c, dto.AuthResponse{User: userJSON(u), AuthMethod: "password", PasswordSetupRequired: u.PasswordSetupRequired})
 }
 func (s *Service) Me(c *gin.Context) {
 	u, err := s.current(c)
@@ -118,8 +118,49 @@ func (s *Service) Me(c *gin.Context) {
 		errhandler.Fail(c, errhandler.Unauthenticated)
 		return
 	}
-	errhandler.OK(c, dto.AuthResponse{User: userJSON(u), AuthMethod: "session"})
+	errhandler.OK(c, dto.AuthResponse{User: userJSON(u), AuthMethod: "session", PasswordSetupRequired: u.PasswordSetupRequired})
 }
+
+func (s *Service) SetInitialPassword(c *gin.Context) {
+	if c.GetHeader("X-Requested-With") != "XMLHttpRequest" {
+		errhandler.Fail(c, errhandler.CSRFValidationFailed)
+		return
+	}
+	u, err := s.current(c)
+	if err != nil {
+		errhandler.Fail(c, errhandler.Unauthenticated)
+		return
+	}
+	if !u.PasswordSetupRequired {
+		errhandler.Fail(c, errhandler.PasswordSetupConflict)
+		return
+	}
+	var req dto.SetPasswordRequest
+	if c.ShouldBindJSON(&req) != nil || len(req.Password) < 12 || len(req.Password) > 72 {
+		errhandler.Fail(c, errhandler.InvalidArgument)
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		errhandler.Fail(c, errhandler.InternalError)
+		return
+	}
+	result := s.DB.Model(&model.User{}).
+		Where("sub = ? AND status = ? AND password_setup_required = ?", u.Sub, "active", true).
+		Updates(map[string]any{"password_hash": string(hash), "password_setup_required": false})
+	if result.Error != nil {
+		errhandler.Fail(c, errhandler.InternalError)
+		return
+	}
+	if result.RowsAffected != 1 {
+		errhandler.Fail(c, errhandler.PasswordSetupConflict)
+		return
+	}
+	u.PasswordHash = string(hash)
+	u.PasswordSetupRequired = false
+	errhandler.OK(c, dto.AuthResponse{User: userJSON(u), AuthMethod: "sso", PasswordSetupRequired: false})
+}
+
 func (s *Service) Logout(c *gin.Context) {
 	if ck, err := c.Request.Cookie(cookieName); err == nil {
 		now := time.Now().UTC()
@@ -219,12 +260,17 @@ func (s *Service) SSOCallback(c *gin.Context) {
 	slog.Debug("SSO identity received", "request_id", c.GetString("request_id"), "sub", info.Sub, "student_number_present", info.StudentNumber != "")
 	username := info.Username
 	if username == "" {
-		username = "sso_" + info.Sub
+		username, err = randomToken(16)
+		if err != nil {
+			fail()
+			return
+		}
+		username = "sso_" + username
 	}
 	var u model.User
 	err = s.DB.Where("sub = ?", info.Sub).First(&u).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		u = model.User{Sub: info.Sub, ID: info.StudentNumber, Name: info.Name, Username: username, Status: "active", Groups: "formal_user"}
+		u = model.User{Sub: info.Sub, ID: info.StudentNumber, Name: info.Name, Username: username, Status: "active", Groups: "formal_user", PasswordSetupRequired: true}
 		if s.DB.Create(&u).Error != nil {
 			fail()
 			return
@@ -242,8 +288,12 @@ func (s *Service) SSOCallback(c *gin.Context) {
 		fail()
 		return
 	}
-	slog.Debug("SSO login completed", "request_id", c.GetString("request_id"), "destination", frontendURL(s.Config.FrontendURL, tx.ReturnTo))
-	c.Redirect(303, frontendURL(s.Config.FrontendURL, tx.ReturnTo))
+	destination := tx.ReturnTo
+	if u.PasswordSetupRequired {
+		destination = "/set-password"
+	}
+	slog.Debug("SSO login completed", "request_id", c.GetString("request_id"), "destination", frontendURL(s.Config.FrontendURL, destination))
+	c.Redirect(303, frontendURL(s.Config.FrontendURL, destination))
 }
 func mustToken(n int) string { v, _ := randomToken(n); return v }
 
@@ -252,6 +302,11 @@ func (s *Service) Middleware() gin.HandlerFunc {
 		u, err := s.current(c)
 		if err != nil {
 			errhandler.Fail(c, errhandler.Unauthenticated)
+			c.Abort()
+			return
+		}
+		if u.PasswordSetupRequired {
+			errhandler.Fail(c, errhandler.PasswordSetupRequired)
 			c.Abort()
 			return
 		}

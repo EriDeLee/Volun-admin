@@ -68,6 +68,7 @@ func NewRouter(db Pinger, log *slog.Logger, authService *auth.Service) *gin.Engi
 	authRoutes.POST("/login", authService.Login)
 	authRoutes.GET("/me", authService.Me)
 	authRoutes.POST("/logout", authService.Logout)
+	authRoutes.POST("/setup-password", authService.SetInitialPassword)
 	authRoutes.GET("/sso/start", authService.SSOStart)
 	r.GET("/auth/sso/callback", authService.SSOCallback)
 	api.GET("/ping", func(c *gin.Context) {

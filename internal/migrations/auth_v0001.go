@@ -7,7 +7,15 @@ import (
 )
 
 func All() []migration.Step {
-	return []migration.Step{{Version: 0, Name: "auth_initial_schema", Up: authV0}, {Version: 1, Name: "auth_sub_primary_key", Up: authV1}}
+	return []migration.Step{
+		{Version: 0, Name: "auth_initial_schema", Up: authV0},
+		{Version: 1, Name: "auth_sub_primary_key", Up: authV1},
+		{Version: 2, Name: "sso_initial_password_setup", Up: authV2},
+	}
+}
+
+func authV2(db *gorm.DB) error {
+	return db.AutoMigrate(&model.User{})
 }
 
 func authV1(db *gorm.DB) error {

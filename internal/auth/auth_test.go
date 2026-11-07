@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"volun-data/internal/config"
 	"volun-data/internal/migration"
@@ -104,7 +105,7 @@ func TestSSOCallbackExchangesTokenAndCreatesSession(t *testing.T) {
 	r.GET("/sso/callback", s.SSOCallback)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("GET", "/sso/callback?code=one-time&state="+state, nil))
-	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "http://localhost:5173/" {
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "http://localhost:5173/set-password" {
 		t.Fatalf("status/location = %d/%q", w.Code, w.Header().Get("Location"))
 	}
 	if w.Header().Get("Set-Cookie") == "" {
@@ -117,8 +118,11 @@ func TestSSOCallbackExchangesTokenAndCreatesSession(t *testing.T) {
 	}
 	me := httptest.NewRecorder()
 	r.ServeHTTP(me, meRequest)
-	if me.Code != http.StatusOK || !strings.Contains(me.Body.String(), "student1") {
+	if me.Code != http.StatusOK || !strings.Contains(me.Body.String(), "student1") || !strings.Contains(me.Body.String(), `"password_setup_required":true`) {
 		t.Fatalf("session lookup: %d %s", me.Code, me.Body.String())
+	}
+	if strings.Contains(me.Body.String(), `"sub"`) {
+		t.Fatalf("public user response exposed sub: %s", me.Body.String())
 	}
 	var count int64
 	s.DB.Model(&model.User{}).Where("username = ?", "student1").Count(&count)
@@ -212,6 +216,84 @@ func TestPasswordLoginAndLogout(t *testing.T) {
 	}
 }
 
+func TestSSOUserMustSetPasswordBeforeUsingPasswordLogin(t *testing.T) {
+	s := testService(t, nil)
+	u := model.User{Sub: "sso-initial", ID: "00123", Name: "SSO User", Username: "student", Status: "active", Groups: "formal_user", PasswordSetupRequired: true}
+	if err := s.DB.Create(&u).Error; err != nil {
+		t.Fatal(err)
+	}
+	r := gin.New()
+	r.POST("/login", s.Login)
+	r.POST("/setup-password", s.SetInitialPassword)
+	r.GET("/protected", s.Middleware(), func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	request := func(method, path, body string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		if method == http.MethodPost && path == "/setup-password" {
+			req.Header.Set("X-Requested-With", "XMLHttpRequest")
+		}
+		for _, cookie := range cookies {
+			req.AddCookie(cookie)
+		}
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w
+	}
+	login := request("POST", "/login", `{"username":"student","password":"not-set-yet"}`)
+	if login.Code != http.StatusUnauthorized {
+		t.Fatalf("password login status = %d", login.Code)
+	}
+	ctxWriter := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(ctxWriter)
+	ctx.Request = httptest.NewRequest("GET", "/", nil)
+	if err := s.issue(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	cookies := ctxWriter.Result().Cookies()
+	if got := request("GET", "/protected", "", cookies...).Code; got != http.StatusForbidden {
+		t.Fatalf("protected status before setup = %d", got)
+	}
+	if got := request("POST", "/setup-password", `{"password":"short"}`, cookies...).Code; got != http.StatusBadRequest {
+		t.Fatalf("short password status = %d", got)
+	}
+	csrfRequest := httptest.NewRequest(http.MethodPost, "/setup-password", strings.NewReader(`{"password":"a-valid-long-password"}`))
+	csrfRequest.Header.Set("Content-Type", "application/json")
+	for _, cookie := range cookies {
+		csrfRequest.AddCookie(cookie)
+	}
+	csrfResponse := httptest.NewRecorder()
+	r.ServeHTTP(csrfResponse, csrfRequest)
+	if csrfResponse.Code != http.StatusForbidden {
+		t.Fatalf("setup without same-origin marker = %d", csrfResponse.Code)
+	}
+	setup := request("POST", "/setup-password", `{"password":"a-secure-password-123"}`, cookies...)
+	if setup.Code != http.StatusOK || strings.Contains(setup.Body.String(), `"password_setup_required":true`) {
+		t.Fatalf("setup password: %d %s", setup.Code, setup.Body.String())
+	}
+	if got := request("GET", "/protected", "", cookies...).Code; got != http.StatusNoContent {
+		t.Fatalf("protected status after setup = %d", got)
+	}
+	login = request("POST", "/login", `{"username":"student","password":"a-secure-password-123"}`)
+	if login.Code != http.StatusOK {
+		t.Fatalf("password login after setup: %d %s", login.Code, login.Body.String())
+	}
+	if got := request("POST", "/setup-password", `{"password":"another-secure-password"}`, cookies...).Code; got != http.StatusConflict {
+		t.Fatalf("second setup status = %d", got)
+	}
+	var saved model.User
+	if err := s.DB.First(&saved, "sub = ?", u.Sub).Error; err != nil {
+		t.Fatal(err)
+	}
+	if saved.PasswordSetupRequired || bcrypt.CompareHashAndPassword([]byte(saved.PasswordHash), []byte("a-secure-password-123")) != nil {
+		t.Fatal("initial password was not saved correctly")
+	}
+	if !strings.Contains(setup.Body.String(), "student") || strings.Contains(setup.Body.String(), `"sub"`) {
+		t.Fatalf("unexpected public response: %s", setup.Body.String())
+	}
+}
+
 func TestMigrateLegacyUserPrimaryKey(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"))
 	if err != nil {
@@ -242,8 +324,8 @@ func TestMigrateLegacyUserPrimaryKey(t *testing.T) {
 	if err := db.Model(&migration.Record{}).Count(&versions).Error; err != nil {
 		t.Fatal(err)
 	}
-	if versions != 2 {
-		t.Fatalf("migration versions = %d, want 2", versions)
+	if versions != 3 {
+		t.Fatalf("migration versions = %d, want 3", versions)
 	}
 	var user model.User
 	if err := db.First(&user, "sub = ?", "legacy-key").Error; err != nil {
