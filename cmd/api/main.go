@@ -74,8 +74,7 @@ func run(log *slog.Logger) error {
 		if err := db.Where("username = ?", cfg.Auth.DevUsername).First(&devUser).Error; err != nil {
 			return fmt.Errorf("load development account: %w", err)
 		}
-		log.Info("development account ready", "sub", devUser.Sub, "id", devUser.ID, "username", devUser.Username, "groups", devUser.Groups)
-		log.Debug("development login credentials", "username", cfg.Auth.DevUsername, "password", cfg.Auth.DevPassword)
+		log.Info("development account ready", "sub", devUser.Sub, "id", devUser.ID, "username", devUser.Username, "password", cfg.Auth.DevPassword, "groups", devUser.Groups)
 	}
 	router := httpapi.NewRouter(pool, log, authService)
 	if err := router.SetTrustedProxies(nil); err != nil {

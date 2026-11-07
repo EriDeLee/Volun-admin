@@ -127,3 +127,5 @@ go build -o bin/api.exe ./cmd/api
 
 Migration v0 initializes a new database; v1 upgrades legacy primary keys. Existing databases already recorded at v1 retain their history and do not rerun v0.
 Dev startup ensures the administrator exists and logs sub/id/username/groups at info; the login password is printed only with LOG_LEVEL=debug. Production does not seed or print development credentials.
+
+???????? `internal/errhandler/codes.go`????? `errhandler.Fail` ?????`errhandler.OK` ??????????? request_id????????? dev ??? INFO ?? `development account ready` ?????? username?password?sub?id ? groups?
