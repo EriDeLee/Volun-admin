@@ -5,6 +5,7 @@
 *.test.exe
 /web/node_modules/
 /web/dist/
+/web/browser-check/
 
 /scripts/
 

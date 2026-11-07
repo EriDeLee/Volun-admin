@@ -2,10 +2,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
-    "format": "prettier --write src index.html package.json vite.config.js",
-    "format:check": "prettier --check src index.html package.json vite.config.js",
-    "test": "vitest run --environment jsdom"
+    "build": "yarn typecheck && vite build",
+    "format": "prettier --write src index.html package.json vite.config.ts tsconfig.json check-workspace.cjs",
+    "format:check": "prettier --check src index.html package.json vite.config.ts tsconfig.json check-workspace.cjs",
+    "test": "vitest run --environment jsdom",
+    "test:browser": "node check-workspace.cjs",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "react": "latest",
@@ -13,10 +15,17 @@
     "vite": "latest"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.8",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
     "jsdom": "^29.1.1",
+    "playwright-core": "^1.65.0",
     "prettier": "^3.9.10",
+    "typescript": "^5.9.3",
     "vitest": "^5.1.0"
-  }
+  },
+  "packageManager": "yarn@1.22.22"
 }
