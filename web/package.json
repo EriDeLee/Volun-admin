@@ -4,7 +4,8 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "format": "prettier --write src index.html package.json vite.config.js",
-    "format:check": "prettier --check src index.html package.json vite.config.js"
+    "format:check": "prettier --check src index.html package.json vite.config.js",
+    "test": "vitest run --environment jsdom"
   },
   "dependencies": {
     "react": "latest",
@@ -12,6 +13,10 @@
     "vite": "latest"
   },
   "devDependencies": {
-    "prettier": "^3.9.10"
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.9.10",
+    "vitest": "^5.1.0"
   }
 }
