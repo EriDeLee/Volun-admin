@@ -1,0 +1,480 @@
+openapi: 3.0.3
+info:
+  title: 志愿服务平台 API
+  version: 0.4.0
+  description: |
+    本文覆盖当前已实现的认证、活动管理员首页、项目台账与基础详情接口。
+    首页仅聚合已持久化的项目信息，不以演示数据填充生产页面。
+    超管查看全部项目；活动管理员仅查看自己创建的项目。后续项目协作授权另行扩展。
+    新建项目初始状态为立项。报名不产生时长，保存时长或下载材料不推进项目状态。
+    时长模块尚未实现，recognized_hours 为 null，而非虚构的 0。
+    JSON 接口返回统一信封；SSO 发起和回调返回浏览器重定向。
+    本地会话使用 HttpOnly Cookie，不向前端返回 sub、密码摘要或上游令牌。
+servers:
+  - url: /
+    description: 同源服务；开发时前端通过 Vite 代理 /api
+tags:
+  - name: Auth
+    description: 已实现的认证接口；不包含尚未实现的 CSRF 令牌签发、资料编辑和找回密码。
+  - name: Activity
+    description: 活动管理员首页、分页项目台账、新建立项及基础详情。
+paths:
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: 账号密码登录
+      security: []
+      description: 校验启用账号及 bcrypt 密码，成功签发平台 Cookie。必须先完成首次密码设置。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: {type: string}
+                password: {type: string, format: password, writeOnly: true}
+      responses:
+        '200':
+          $ref: '#/components/responses/AuthOK'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      operationId: getCurrentUser
+      summary: 读取当前身份及首次设密状态
+      security: [{sessionCookie: []}]
+      description: 允许未完成首次设密的有效会话访问。auth_method 当前返回 session，不推断原始登录方式。
+      responses:
+        '200':
+          $ref: '#/components/responses/AuthOK'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: 退出当前平台会话
+      security: []
+      description: 清除平台 Cookie 并撤销对应会话；无 Cookie 时也返回成功，不退出学校其他系统。
+      responses:
+        '200':
+          description: 已退出
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {nullable: true, example: null}
+  /api/v1/auth/setup-password:
+    post:
+      tags: [Auth]
+      operationId: setupInitialPassword
+      summary: SSO 首次登录设置平台密码
+      security: [{sessionCookie: []}]
+      description: |
+        仅接受 password_setup_required=true 的启用账号。
+        服务端校验 UTF-8 字节数为 12–72，保存 bcrypt 哈希并原子清除标记。
+        要求自定义请求头；服务不允许跨源凭据 CORS。旧账号不会被此接口覆盖密码。
+      parameters:
+        - $ref: '#/components/parameters/RequestedWith'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  format: password
+                  writeOnly: true
+                  description: 12–72 UTF-8 字节；不是 JSON Schema 字符数限制。
+      responses:
+        '200':
+          $ref: '#/components/responses/AuthOK'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 已设置密码，errcode 为 200010。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/auth/sso/start:
+    get:
+      tags: [Auth]
+      operationId: startSSO
+      summary: 发起学校统一认证
+      security: []
+      description: 浏览器整页导航，不应使用 fetch 换取上游令牌。
+      parameters:
+        - in: query
+          name: return_to
+          schema: {type: string, default: /}
+          description: 站内相对路径；不合法路径回退 /。新用户强制进入 /set-password。
+      responses:
+        '302':
+          description: 跳转学校授权地址。
+          headers:
+            Location: {schema: {type: string}}
+        '303':
+          description: 配置缺失或发起失败，回到前端 /login?sso=unavailable 或 error。
+          headers:
+            Location: {schema: {type: string}}
+  /auth/sso/callback:
+    get:
+      tags: [Auth]
+      operationId: ssoCallback
+      summary: 学校 SSO 后端回调
+      security: []
+      description: |
+        实际注册路径不带 /api/v1。后端校验一次性 state、换取令牌并读取用户信息。
+        新建正式用户首次需设置密码；失败返回 /login?sso=failed。
+        code 和 state 不记录到访问日志，不由前端处理。
+      parameters:
+        - in: query
+          name: code
+          schema: {type: string}
+        - in: query
+          name: state
+          schema: {type: string}
+        - in: query
+          name: error
+          schema: {type: string}
+      responses:
+        '303':
+          description: 登录完成或失败后跳转前端；成功设置会话 Cookie。
+          headers:
+            Location: {schema: {type: string}}
+  /api/v1/activity/dashboard:
+    get:
+      tags: [Activity]
+      operationId: getActivityDashboard
+      summary: 读取活动管理首页
+      security: [{sessionCookie: []}]
+      description: |
+        需要 activity_admin 或 super_admin，且已完成首次设密。
+        统计口径为全部时间、当前权限范围内的项目，不伪称本学期统计。
+        待办为立项/筹备/招募/结项/意向阶段的项目，每项目一个跟进任务，最新更新优先。
+        recent_projects 最多 12 条，tasks 最多 5 条；统计为全部授权项目，不仅是返回的列表。
+      responses:
+        '200':
+          description: 首页聚合数据；无项目时数组为空、项目计数为 0。
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/Dashboard'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/activity/projects:
+    get:
+      tags: [Activity]
+      operationId: listActivityProjects
+      summary: 分页查询项目台账
+      security: [{sessionCookie: []}]
+      description: |
+        需要 activity_admin 或 super_admin，且已完成首次设密。
+        活动管理员仅查询本人创建的项目；超管查询全部项目。
+        q 按项目名称或编号进行字面子串搜索，% 和 _ 不作为通配符。
+        status、department、view 与关键词组合筛选；按 updated_at DESC、id DESC 排序。
+        total 是筛选后的总数；summary 和 departments 是筛选前、权限范围内全部项目的信息。
+        pending 包含立项、筹备、招募、结项、意向，不代表独立审核工单。
+        不返回内部用户 sub 或 created_by。时长模块未接入，recognized_hours 返回 null。
+        page 和 page_size 非整数、越界，或状态/视图不合法时返回 400；超出结果页返回空 items。
+      parameters:
+        - in: query
+          name: q
+          schema: {type: string, maxLength: 160}
+          description: 项目名称或编号的字面子串；去除首尾空白。
+        - in: query
+          name: status
+          schema: {$ref: '#/components/schemas/ProjectStatus'}
+          description: 留空或省略表示全部状态。
+        - in: query
+          name: department
+          schema: {type: string, maxLength: 80}
+          description: 主办部门精确匹配；去除首尾空白，留空表示全部部门。
+        - in: query
+          name: view
+          schema: {type: string, enum: [all, pending], default: all}
+        - in: query
+          name: page
+          schema: {type: integer, minimum: 1, maximum: 1000000, default: 1}
+        - in: query
+          name: page_size
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        '200':
+          description: 分页项目及权限范围内统计；无项目时数组为空、总数为 0。
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/ProjectList'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [Activity]
+      operationId: createActivityProject
+      summary: 新建项目立项
+      security: [{sessionCookie: []}]
+      description: |
+        角色与首页一致。仅允许指定基础字段，不接受负责人、用户组或状态注入。
+        状态固定为立项，创建人即当前活动负责人；不产生志愿者或时长。
+        日期按日期保存，不伪造时刻；结束日期不得早于开始日期。
+        请求体最多 16 KiB；首次实现为单部门，后续多部门与协作授权单独扩展。
+      parameters:
+        - $ref: '#/components/parameters/RequestedWith'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateProject'}
+      responses:
+        '200':
+          $ref: '#/components/responses/ProjectOK'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/activity/projects/{id}:
+    get:
+      tags: [Activity]
+      operationId: getActivityProject
+      summary: 读取项目基础详情
+      security: [{sessionCookie: []}]
+      description: 活动管理员只能读取本人创建的项目；不存在或不在数据范围内统一返回 404。
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          $ref: '#/components/responses/ProjectOK'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: 项目不存在或不在授权范围。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: volun_session
+      description: 服务端设置的 HttpOnly/SameSite=Lax Cookie；生产要求 Secure。
+  parameters:
+    RequestedWith:
+      in: header
+      name: X-Requested-With
+      required: true
+      schema: {type: string, enum: [XMLHttpRequest]}
+      description: 同源前端自定义请求头，禁止跨源凭据 CORS。
+  responses:
+    AuthOK:
+      description: 当前用户及设密状态；登录成功时设置会话 Cookie。
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data: {$ref: '#/components/schemas/Auth'}
+    ProjectOK:
+      description: 项目基础信息。
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data: {$ref: '#/components/schemas/Project'}
+    BadRequest:
+      description: 参数不合法，errcode 为 100001。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Unauthorized:
+      description: 会话失效 200001，或账号密码不可用 200003。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Forbidden:
+      description: 无活动管理权限 200002、请求头校验失败 200008，或首次设密未完成 200009。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    InternalError:
+      description: 内部错误 900001；不向客户端返回数据库或上游敏感详情。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+  schemas:
+    Envelope:
+      type: object
+      required: [errcode, message, data, request_id]
+      properties:
+        errcode: {type: integer, example: 0}
+        message: {type: string, example: ok}
+        request_id: {type: string}
+    Error:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data: {nullable: true, example: null}
+    User:
+      type: object
+      required: [id, name, username, groups]
+      properties:
+        id: {type: string, description: 学号或人员编号，保留前导零。}
+        name: {type: string}
+        username: {type: string}
+        groups:
+          type: array
+          items:
+            type: string
+            enum: [super_admin, data_admin, activity_admin, formal_user]
+    Auth:
+      type: object
+      required: [user, auth_method, password_setup_required]
+      properties:
+        user: {$ref: '#/components/schemas/User'}
+        auth_method: {type: string, enum: [password, session, sso]}
+        password_setup_required: {type: boolean}
+    ProjectStatus:
+      type: string
+      enum: [立项, 筹备, 招募, 进行, 结项, 意向, 统计, 数据, 录入, 审核, 通过, 驳回]
+    CreateProject:
+      type: object
+      required: [name, department, starts_on, ends_on, location]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 80}
+        department: {type: string, minLength: 1, maxLength: 80}
+        starts_on: {type: string, format: date}
+        ends_on: {type: string, format: date}
+        location: {type: string, minLength: 1, maxLength: 160}
+        description: {type: string, maxLength: 2000, default: ''}
+    Project:
+      allOf:
+        - $ref: '#/components/schemas/CreateProject'
+        - type: object
+          required: [id, code, status, owner_name, created_at, updated_at]
+          properties:
+            id: {type: string}
+            code: {type: string, example: ZY-20261108-9B3B289DAFA1}
+            status: {$ref: '#/components/schemas/ProjectStatus'}
+            owner_name: {type: string, description: 当前活动负责人；非数据组审核负责人。}
+            created_at: {type: string, format: date-time}
+            updated_at: {type: string, format: date-time}
+    ProjectList:
+      type: object
+      required: [items, total, page, page_size, summary, departments, scope]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: {$ref: '#/components/schemas/Project'}
+        total: {type: integer, format: int64, minimum: 0, description: 筛选后的项目总数。}
+        page: {type: integer, minimum: 1, maximum: 1000000}
+        page_size: {type: integer, minimum: 1, maximum: 100}
+        scope: {type: string, enum: [owned, all]}
+        departments:
+          type: array
+          description: 权限范围内全部主办部门，去重、升序排列，不受关键词和状态筛选影响。
+          items: {type: string}
+        summary:
+          type: object
+          description: 权限范围内全部时间、筛选前的项目统计。
+          required: [project_count, recruiting_count, pending_count, recognized_hours]
+          properties:
+            project_count: {type: integer, format: int64, minimum: 0}
+            recruiting_count: {type: integer, format: int64, minimum: 0}
+            pending_count: {type: integer, format: int64, minimum: 0}
+            recognized_hours: {type: integer, nullable: true, description: 当前未接入时长模块，返回 null。}
+    Dashboard:
+      type: object
+      required: [scope, generated_at, summary, tasks, recent_projects, stages]
+      properties:
+        scope: {type: string, enum: [owned, all], description: owned 为本人项目，all 为超管全部项目。}
+        generated_at: {type: string, format: date-time}
+        summary:
+          type: object
+          required: [project_count, recruiting_count, pending_count, recognized_hours]
+          properties:
+            project_count: {type: integer, format: int64, minimum: 0}
+            recruiting_count: {type: integer, format: int64, minimum: 0}
+            pending_count: {type: integer, format: int64, minimum: 0}
+            recognized_hours: {type: integer, nullable: true, description: 尚未接入时长模块，当前为 null。}
+        tasks:
+          type: array
+          maxItems: 5
+          items:
+            type: object
+            required: [project_id, project_name, status, instruction]
+            properties:
+              project_id: {type: string}
+              project_name: {type: string}
+              status: {$ref: '#/components/schemas/ProjectStatus'}
+              instruction: {type: string}
+        recent_projects:
+          type: array
+          maxItems: 12
+          items: {$ref: '#/components/schemas/Project'}
+        stages:
+          type: array
+          description: 每种状态均返回一条，含计数 0 的状态；十二状态总数等于 project_count。
+          minItems: 12
+          maxItems: 12
+          items:
+            type: object
+            required: [status, count]
+            properties:
+              status: {$ref: '#/components/schemas/ProjectStatus'}
+              count: {type: integer, format: int64, minimum: 0}

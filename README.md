@@ -75,14 +75,25 @@ internal/database/    GORM 数据库连接器
 internal/model/       GORM 实体，供业务与迁移共用
 internal/dto/         接口请求、响应及 SSO 上游数据结构
 internal/auth/        登录、会话及学校 SSO
+internal/activity/    活动首页聚合、新建立项与项目基础详情
 internal/migration/   全局迁移执行器
 internal/migrations/  按版本登记的迁移文件
 internal/httpapi/     路由、中间件及统一响应
-web/                  React 登录页
-docs/                 项目方案与任务拆解
+web/                  React 登录、个人信息与活动管理首页
+docs/                 项目方案、任务拆解与 openapi.yaml 接口契约
 ```
 
-数据库表结构集中定义在 `internal/model/auth.go`，迁移直接引用 model，不依赖 auth 业务包。接口 DTO 按用途放在 `internal/dto/auth.go`、`sso.go` 和 `response.go`；DTO 不参与 GORM 迁移，用户响应不包含内部 sub、密码哈希或会话令牌摘要。
+数据库实体定义在 `internal/model/`，迁移直接引用 model，不依赖业务包。接口 DTO 按用途放在 `internal/dto/`；DTO 不参与 GORM 迁移，响应不包含内部用户 sub、密码哈希或会话令牌摘要。
+
+## 活动管理前端
+
+接口契约见 [`docs/openapi.yaml`](docs/openapi.yaml)，覆盖现有 6 条认证路由与 4 条活动接口：`GET /api/v1/activity/dashboard`、`GET /api/v1/activity/projects`、`POST /api/v1/activity/projects`、`GET /api/v1/activity/projects/{id}`。台账接口在授权范围内支持搜索、十二状态与部门筛选、分页和全范围统计。
+
+前端入口 `/activity` 沿用 `web/preview/` 设计。活动管理员登录后默认进入首页，仅查看本人创建项目；超管查看全部项目，其他用户仍进入个人信息。后端强制校验会话、首次设密和角色，并按创建人限制查询；越权读取详情与不存在项目均返回 404。
+
+前端已覆盖登录、首次设密、个人信息、工作台、项目台账、项目详情、招募草稿、时长登记草稿、材料实时预览与公开报名版式。持久化立项、项目查询和台账使用真实 API；招募、场次、时长与材料仅保存本次会话草稿，刷新或退出后清除。公开报名尚未开放服务器提交，填写预览不发送报名。认定时长为 null，不使用演示值。状态变更、协作授权与最终审核待接入，完整边界见前端 README。版本3新增 `projects` 表，启动时由全局迁移执行器应用，不需要手动建表。
+
+活动接口集成测试使用临时内存 SQLite，执行 `go test -tags integration ./...`。前端测试、构建命令见 [`web/README.md`](web/README.md)。
 
 ## 检查
 
@@ -109,7 +120,7 @@ $env:SSO_REDIRECT_URI = 'http://localhost:5173/sso/callback'
 go run ./cmd/api
 ```
 
-另一个终端执行 `cd web`、`npm install`、`npm run dev`，浏览器使用 `http://localhost:5173`。上述回调经 Vite 代理交给 Go，随后返回前端首页；平台也必须允许并登记这个完整地址。若已登记的是 `http://localhost:8080/auth/sso/callback`，回调后的 `/` 会落在后端端口，当前后端未提供前端首页，需要返回 5173 查看登录状态。不要混用 localhost 和 127.0.0.1。
+另一个终端执行 `cd web`、`yarn install --frozen-lockfile`、`yarn dev`，浏览器使用 `http://localhost:5173`。上述回调经 Vite 代理交给 Go，随后返回前端首页；平台也必须允许并登记这个完整地址。若已登记的是 `http://localhost:8080/auth/sso/callback`，回调后的 `/` 会落在后端端口，当前后端未提供前端首页，需要返回 5173 查看登录状态。不要混用 localhost 和 127.0.0.1。
 
 根目录 `.env` 自动加载，系统环境变量优先；更改配置后要重启后端。启动日志只报告凭据是否已配置，不输出凭据。未登录时 `/auth/me` 返回 401 是正常行为；SSO 发起正常返回 302，缺少配置时返回 303 到 `/login?sso=unavailable`。Vite 固定5173端口并代理到127.0.0.1:8080，修改代理配置后也请重启前端。
 
