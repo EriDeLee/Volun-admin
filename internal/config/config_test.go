@@ -36,6 +36,22 @@ func TestDotEnvAndEnvironmentPrecedence(t *testing.T) {
 	}
 }
 
+func TestAttachmentDefaultsFromUTF8File(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".env")
+	const team = "测试学院志愿者协会"
+	const name = "测试联系人"
+	if err := os.WriteFile(path, []byte("ATTACHMENT1_TEAM="+team+"\nATTACHMENT1_CONTACT_NAME="+name+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadFile(path, func(string) (string, bool) { return "", false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Attachment1.Team != team || cfg.Attachment1.ContactName != name {
+		t.Fatal("UTF-8 attachment defaults changed during file loading")
+	}
+}
+
 func TestAttachmentDefaultsFromEnvironment(t *testing.T) {
 	values := map[string]string{"ATTACHMENT1_TEAM": "配置团队", "ATTACHMENT1_CONTACT_NAME": "配置联系人", "ATTACHMENT1_CONTACT_EMAIL": "test@example.test", "ATTACHMENT1_NOTES": "补充", "ATTACHMENT1_TRAINING": "培训"}
 	cfg, err := load(func(key string) string { return values[key] })
