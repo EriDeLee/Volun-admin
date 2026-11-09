@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"volun-data/internal/activity"
+	"volun-data/internal/admin"
 	"volun-data/internal/auth"
 	"volun-data/internal/dto"
 	"volun-data/internal/errhandler"
@@ -74,9 +75,18 @@ func NewRouter(db Pinger, log *slog.Logger, authService *auth.Service) *gin.Engi
 	activityService := &activity.Service{DB: authService.DB}
 	activityRoutes := api.Group("/activity", authService.Middleware(), activity.RequireManager)
 	activityRoutes.GET("/dashboard", activityService.Dashboard)
+	activityRoutes.GET("/approvals", activityService.ListApprovals)
 	activityRoutes.GET("/projects", activityService.ListProjects)
 	activityRoutes.POST("/projects", activityService.CreateProject)
 	activityRoutes.GET("/projects/:id", activityService.GetProject)
+	activityService.RegisterWorkflow(activityRoutes, api.Group("/public", authService.OptionalIdentity()))
+	adminService := &admin.Service{DB: authService.DB}
+	adminRoutes := api.Group("/admin", authService.Middleware(), admin.RequireSuperAdmin)
+	adminRoutes.GET("/users", adminService.ListUsers)
+	adminRoutes.POST("/users", adminService.CreateUser)
+	adminRoutes.POST("/users/:username/reset-password", adminService.ResetPassword)
+	adminRoutes.POST("/users/import", adminService.ImportUsers)
+	adminRoutes.PATCH("/users/:username", adminService.UpdateUser)
 	r.GET("/auth/sso/callback", authService.SSOCallback)
 	api.GET("/ping", func(c *gin.Context) {
 		errhandler.OK(c, dto.PingResponse{Message: "pong"})

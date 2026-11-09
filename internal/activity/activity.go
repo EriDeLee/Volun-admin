@@ -44,7 +44,7 @@ func hasGroup(u model.User, group string) bool {
 // RequireManager runs after authentication and initial-password enforcement.
 func RequireManager(c *gin.Context) {
 	u, ok := c.MustGet("user").(model.User)
-	if !ok || (!hasGroup(u, "super_admin") && !hasGroup(u, "activity_admin")) {
+	if !ok || (!hasGroup(u, "super_admin") && !hasGroup(u, "activity_admin") && !hasGroup(u, "data_admin")) {
 		errhandler.Fail(c, errhandler.PermissionDenied)
 		return
 	}
@@ -56,19 +56,27 @@ func (s *Service) scope(c *gin.Context) *gorm.DB {
 	u := c.MustGet("user").(model.User)
 	q := s.DB.WithContext(c.Request.Context()).Model(&model.Project{})
 	if !hasGroup(u, "super_admin") {
-		q = q.Where("created_by = ?", u.Sub)
+		if hasGroup(u, "data_admin") {
+			if hasGroup(u, "activity_admin") {
+				q = q.Where("approval <> ? OR created_by = ?", "draft", u.Sub)
+			} else {
+				q = q.Where("approval <> ?", "draft")
+			}
+		} else {
+			q = q.Where("created_by = ?", u.Sub)
+		}
 	}
 	return q
 }
 
 func projectJSON(p model.Project) dto.ProjectResponse {
-	return dto.ProjectResponse{ID: p.ID, Code: p.Code, Name: p.Name, Department: p.Department, StartsOn: p.StartsOn, EndsOn: p.EndsOn, Location: p.Location, Description: p.Description, Status: p.Status, OwnerName: p.OwnerName, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt}
+	return dto.ProjectResponse{ID: p.ID, Code: p.Code, Name: p.Name, Department: p.Department, StartsOn: p.StartsOn, EndsOn: p.EndsOn, Location: p.Location, Description: p.Description, Status: p.Status, Approval: p.Approval, OwnerName: p.OwnerName, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt}
 }
 
 func (s *Service) Dashboard(c *gin.Context) {
 	u := c.MustGet("user").(model.User)
 	data := dto.ActivityDashboard{Scope: "owned", GeneratedAt: time.Now().UTC(), Tasks: []dto.ActivityTask{}, RecentProjects: []dto.ProjectResponse{}, Stages: []dto.ActivityStage{}}
-	if hasGroup(u, "super_admin") {
+	if dataManager(u) {
 		data.Scope = "all"
 	}
 	// A read transaction keeps this small aggregate internally consistent in SQLite.
@@ -114,6 +122,10 @@ func (s *Service) Dashboard(c *gin.Context) {
 }
 
 func (s *Service) CreateProject(c *gin.Context) {
+	if u := actor(c); !hasGroup(u, "super_admin") && !hasGroup(u, "activity_admin") {
+		errhandler.Fail(c, errhandler.PermissionDenied)
+		return
+	}
 	if c.GetHeader("X-Requested-With") != "XMLHttpRequest" {
 		errhandler.Fail(c, errhandler.CSRFValidationFailed)
 		return
@@ -150,7 +162,7 @@ func (s *Service) CreateProject(c *gin.Context) {
 	if ownerName == "" {
 		ownerName = u.Username
 	}
-	p := model.Project{ID: id, Code: "ZY-" + time.Now().UTC().Format("20060102") + "-" + strings.ToUpper(id[:12]), Name: req.Name, Department: req.Department, StartsOn: req.StartsOn, EndsOn: req.EndsOn, Location: req.Location, Description: req.Description, Status: "立项", CreatedBy: u.Sub, OwnerName: ownerName}
+	p := model.Project{ID: id, Code: "ZY-" + time.Now().UTC().Format("20060102") + "-" + strings.ToUpper(id[:12]), Name: req.Name, Department: req.Department, StartsOn: req.StartsOn, EndsOn: req.EndsOn, Location: req.Location, Description: req.Description, Status: "立项", Approval: "draft", CreatedBy: u.Sub, OwnerName: ownerName}
 	if err := s.DB.WithContext(c.Request.Context()).Create(&p).Error; err != nil {
 		errhandler.Fail(c, errhandler.InternalError)
 		return
@@ -206,7 +218,7 @@ func (s *Service) ListProjects(c *gin.Context) {
 		Items: []dto.ProjectResponse{}, Page: page, PageSize: pageSize,
 		Departments: []string{}, Scope: "owned",
 	}
-	if hasGroup(u, "super_admin") {
+	if dataManager(u) {
 		data.Scope = "all"
 	}
 	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {

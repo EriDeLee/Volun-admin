@@ -111,7 +111,6 @@ func TestAuthorization(t *testing.T) {
 	}{
 		{"anonymous", "", false, 200001, 401},
 		{"formal user", "formal_user", false, 200002, 403},
-		{"data administrator", "data_admin", false, 200002, 403},
 		{"similar role is not accepted", "other_activity_admin", false, 200002, 403},
 		{"password setup gate", "activity_admin", true, 200009, 403},
 	} {

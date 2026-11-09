@@ -21,6 +21,7 @@ type ProjectResponse struct {
 	Location    string    `json:"location"`
 	Description string    `json:"description"`
 	Status      string    `json:"status"`
+	Approval    string    `json:"approval"`
 	OwnerName   string    `json:"owner_name"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
