@@ -3,7 +3,7 @@ import {
   canManage,
   groupNames,
   homePath,
-  isSuperAdmin,
+  canReadUsers,
 } from "../lib/constants.ts";
 import Brand from "./Brand.tsx";
 import Icon from "./Icon.tsx";
@@ -44,7 +44,7 @@ export default function Sidebar({
           : []),
       ]
     : [];
-  const management = isSuperAdmin(session)
+  const management = canReadUsers(session)
     ? [{ path: "/users", label: "成员管理", icon: "people" }]
     : [];
   const personal = [

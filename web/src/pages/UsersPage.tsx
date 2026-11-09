@@ -44,6 +44,7 @@ export default function UsersPage({
   const mounted = useRef(false);
   const requestID = useRef(0);
   const selfName = session.user.username || "";
+  const canEdit = session.user.groups.includes("super_admin");
 
   const load = async () => {
     const id = ++requestID.current;
@@ -179,21 +180,31 @@ export default function UsersPage({
         <div>
           <h1>成员管理</h1>
           <p>
-            管理平台成员账号、分配四个固定用户组及启停账号。活动志愿者名单在项目详情中管理。
+            {canEdit
+              ? "管理平台成员账号、分配用户组及启停账号。"
+              : "查看和搜索平台成员账号；账号和权限变更由超管处理。"}
+            活动志愿者名单在项目详情中管理。
           </p>
         </div>
         <div className="activity-actions">
-          <button className="button primary" onClick={() => setAdding(true)}>
-            <Icon name="plus" />
-            添加成员
-          </button>
-          <button
-            className="button secondary"
-            onClick={() => setImporting(true)}
-          >
-            <Icon name="upload" />
-            批量导入
-          </button>
+          {canEdit && (
+            <>
+              <button
+                className="button primary"
+                onClick={() => setAdding(true)}
+              >
+                <Icon name="plus" />
+                添加成员
+              </button>
+              <button
+                className="button secondary"
+                onClick={() => setImporting(true)}
+              >
+                <Icon name="upload" />
+                批量导入
+              </button>
+            </>
+          )}
           <button
             className="button secondary"
             onClick={() => setRevision((v) => v + 1)}
@@ -394,26 +405,30 @@ export default function UsersPage({
                           : "—"}
                       </td>
                       <td>
-                        <div className="table-actions">
-                          <button
-                            className="activity-text-button"
-                            onClick={() => openEdit(u)}
-                          >
-                            编辑
-                          </button>
-                          <button
-                            className="activity-text-button"
-                            disabled={u.username === selfName}
-                            title={
-                              u.username === selfName
-                                ? "不能在此重置当前登录账号密码"
-                                : undefined
-                            }
-                            onClick={() => setResetting(u)}
-                          >
-                            重置密码
-                          </button>
-                        </div>
+                        {canEdit ? (
+                          <div className="table-actions">
+                            <button
+                              className="activity-text-button"
+                              onClick={() => openEdit(u)}
+                            >
+                              编辑
+                            </button>
+                            <button
+                              className="activity-text-button"
+                              disabled={u.username === selfName}
+                              title={
+                                u.username === selfName
+                                  ? "不能在此重置当前登录账号密码"
+                                  : undefined
+                              }
+                              onClick={() => setResetting(u)}
+                            >
+                              重置密码
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="muted">只读</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -467,9 +482,9 @@ export default function UsersPage({
       </section>
       <footer className="activity-footer">
         <span>北京航空航天大学 · 志愿服务项目管理平台</span>
-        <span>成员管理 · 超管</span>
+        <span>{canEdit ? "成员管理 · 超管" : "人员目录 · 数据管理员只读"}</span>
       </footer>
-      {editing && (
+      {canEdit && editing && (
         <Modal
           title={`编辑账号 · ${editing.username}`}
           locked={saving}
@@ -536,7 +551,7 @@ export default function UsersPage({
           </form>
         </Modal>
       )}
-      {importing && (
+      {canEdit && importing && (
         <UserImport
           onClose={() => setImporting(false)}
           onSessionIssue={onSessionIssue}
@@ -548,7 +563,7 @@ export default function UsersPage({
           }}
         />
       )}
-      {(adding || resetting) && (
+      {canEdit && (adding || resetting) && (
         <AccountForm
           target={resetting || undefined}
           onClose={() => {

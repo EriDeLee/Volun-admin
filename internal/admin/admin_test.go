@@ -137,6 +137,13 @@ func TestAdminAuthorization(t *testing.T) {
 				{"POST", "/api/v1/admin/users", `{"username":"new"}`},
 				{"POST", "/api/v1/admin/users/someone/reset-password", `{"password":"temporary-secret-123"}`},
 			} {
+				if tc.group == "data_admin" && route.method == "GET" {
+					result := decode[struct{ Total int }](t, f.request("GET", route.path+"?q=data_admin", "", token, true))
+					if result.Total != 1 {
+						t.Fatalf("directory search: %+v", result)
+					}
+					continue
+				}
 				w := f.request(route.method, route.path, route.body, token, true)
 				var response dto.Response
 				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {

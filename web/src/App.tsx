@@ -11,7 +11,7 @@ import ParticipantPage from "./pages/ParticipantPage.tsx";
 import SignupPage from "./pages/SignupPage.tsx";
 import UsersPage from "./pages/UsersPage.tsx";
 import { DraftProvider } from "./lib/drafts.tsx";
-import { isManagerPath, isSuperAdmin } from "./lib/constants.ts";
+import { isManagerPath, canReadUsers } from "./lib/constants.ts";
 import "./workspace.css";
 import Icon from "./components/Icon.tsx";
 import { Brand } from "./components/WorkspaceShell.tsx";
@@ -108,7 +108,7 @@ function Application() {
             ? "/profile"
             : canManage(data) && isManagerPath(location.pathname)
               ? location.pathname + location.search
-              : isSuperAdmin(data) && location.pathname === "/users"
+              : canReadUsers(data) && location.pathname === "/users"
                 ? "/users"
                 : homePath(data),
       );
@@ -504,10 +504,10 @@ function Application() {
     );
   if (
     pathname !== "/profile" &&
-    (canManage(session) || (pathname === "/users" && isSuperAdmin(session)))
+    (canManage(session) || (pathname === "/users" && canReadUsers(session)))
   ) {
     const managerProps = { ...workspaceProps, session };
-    if (pathname === "/users" && isSuperAdmin(session))
+    if (pathname === "/users" && canReadUsers(session))
       return <UsersPage {...managerProps} />;
     if (pathname === "/projects") return <ProjectsPage {...managerProps} />;
     if (

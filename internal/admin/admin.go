@@ -1,4 +1,4 @@
-// Package admin implements super-admin user directory operations.
+// Package admin implements account directory and super-admin account operations.
 package admin
 
 import (
@@ -95,6 +95,17 @@ func userJSON(u model.User) dto.AdminUserResponse {
 		CreatedAt:             u.CreatedAt,
 		UpdatedAt:             u.UpdatedAt,
 	}
+}
+
+// RequireDirectory allows administrators to read the account directory.
+func RequireDirectory(c *gin.Context) {
+	u, ok := c.MustGet("user").(model.User)
+	if !ok || !hasGroup(u, "super_admin") && !hasGroup(u, "data_admin") {
+		errhandler.Fail(c, errhandler.PermissionDenied)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.Next()
 }
 
 // RequireSuperAdmin runs after authentication and initial-password enforcement.
