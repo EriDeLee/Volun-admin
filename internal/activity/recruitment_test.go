@@ -64,7 +64,12 @@ func TestRecruitmentMultipleAssignments(t *testing.T) {
 	}
 	choices := []activity.Assignment{{SessionID: "s1", PositionID: "p1"}, {SessionID: "s2", PositionID: "p2"}}
 	m := activity.Member{Name: "测试成员", Number: "001", Phone: "13800000000", Notes: "可协助布场", Assignments: choices}
-	registration := map[string]any{"key": "synthetic-registration-0001", "member": m}
+	// Match the browser payload that reported 100001: legacy fields are empty,
+	// while both selected pairs are present in assignments.
+	registration := map[string]any{"key": "synthetic-registration-0001", "member": map[string]any{
+		"name": m.Name, "number": m.Number, "department": "", "phone": m.Phone,
+		"session_id": "", "position_id": "", "notes": m.Notes, "assignments": choices,
+	}}
 	w := call("POST", public+"/forms/form/responses", registration, "", nil, 200)
 	if len(state.Members) != 1 || len(state.Members[0].Assignments) != 2 || state.Members[0].Notes != m.Notes || state.Members[0].SessionID != "s1" {
 		t.Fatalf("registration: %+v", state.Members)

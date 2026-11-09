@@ -11,6 +11,7 @@ const (
 	QuestionnaireClosed   Code = 400003
 	ProjectLocked         Code = 300002
 	HoursNotReady         Code = 300003
+	MemberHasRecords      Code = 300004
 	InvalidArgument       Code = 100001
 	ResourceNotFound      Code = 100002
 	MethodNotAllowed      Code = 100006
@@ -34,6 +35,8 @@ func (code Code) details() (int, string) {
 		return http.StatusConflict, "当前项目已锁定，请先退回或重开"
 	case HoursNotReady:
 		return http.StatusConflict, "请先确认准备完成，并在首个场次结束后登记时长"
+	case MemberHasRecords:
+		return http.StatusConflict, "该成员已有出勤或时长记录，不能删除"
 	case InvalidArgument:
 		return http.StatusBadRequest, "参数不合法"
 	case ResourceNotFound:

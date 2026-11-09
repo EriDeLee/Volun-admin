@@ -135,6 +135,41 @@ func (s *Service) saveMembers(c *gin.Context) {
 	})
 }
 
+func (s *Service) deleteMember(c *gin.Context) {
+	var req struct{}
+	if !decodeBody(c, &req) {
+		return
+	}
+	s.mutate(c, "members.delete", func(tx *gorm.DB, p *model.Project, row model.Workflow, state *State, u model.User) (string, error) {
+		if err := dataEditable(p, u); err != nil {
+			return "", err
+		}
+		id := c.Param("memberID")
+		for i, m := range state.Members {
+			if m.ID != id {
+				continue
+			}
+			for _, a := range state.Attendance {
+				if a.MemberID == id {
+					return "", errMemberHasRecords
+				}
+			}
+			for _, h := range state.Hours {
+				if h.MemberID == id {
+					return "", errMemberHasRecords
+				}
+			}
+			if err := tx.Model(&model.ParticipantGrant{}).Where("project_id=? AND member_id=? AND revoked_at IS NULL", p.ID, id).Update("revoked_at", time.Now().UTC()).Error; err != nil {
+				return "", err
+			}
+			state.Members = append(state.Members[:i], state.Members[i+1:]...)
+			delete(state.Bindings, id)
+			return fmt.Sprintf("删除成员：%s（%s），成员ID：%s", m.Name, m.Number, id), nil
+		}
+		return "", gorm.ErrRecordNotFound
+	})
+}
+
 func (s *Service) saveForm(c *gin.Context) {
 	var req struct {
 		Kind        string `json:"kind"`

@@ -11,6 +11,7 @@ func (s *Service) RegisterWorkflow(managed, public *gin.RouterGroup) {
 	p.POST("/changes", s.requestChange)
 	p.POST("/applications/:applicationID/decision", s.decideApplication)
 	p.PUT("/members", s.saveMembers)
+	p.DELETE("/members/:memberID", s.deleteMember)
 	p.POST("/members/access", s.manageGrant)
 	p.GET("/members/export", s.exportMembers)
 	p.PUT("/forms", s.saveForm)

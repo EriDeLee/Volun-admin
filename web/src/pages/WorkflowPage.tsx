@@ -247,6 +247,11 @@ export default function WorkflowPage(
   };
   const sessions = data?.state.basics.sessions || [];
   const members = data?.state.members || [];
+  const memberHasRecords = (memberID: string) =>
+    !!(
+      data?.state.attendance.some((a) => a.member_id === memberID) ||
+      data?.state.hours?.some((h) => h.member_id === memberID)
+    );
   const availability = data ? workflowAvailability(data, now) : null;
   const firstEnd = availability?.firstEnd;
   const refreshProgress = async () => {
@@ -1055,7 +1060,51 @@ export default function WorkflowPage(
                           <td className="member-notes">{m.notes || "—"}</td>
                           <td>
                             {can("members.write") ? (
-                              <button onClick={() => setMember(m)}>修改</button>
+                              <div className="activity-actions">
+                                <button
+                                  disabled={busy}
+                                  onClick={() => setMember(m)}
+                                >
+                                  修改
+                                </button>
+                                <button
+                                  disabled={busy || memberHasRecords(m.id)}
+                                  title={
+                                    memberHasRecords(m.id)
+                                      ? "已有出勤或时长记录，不能删除"
+                                      : "从本项目名单删除成员"
+                                  }
+                                  onClick={async () => {
+                                    if (
+                                      !globalThis.confirm(
+                                        `确认从本项目删除“${m.name}（${m.number}）”？删除后本人登记入口将失效。`,
+                                      )
+                                    )
+                                      return;
+                                    if (
+                                      await mutate(
+                                        `/members/${encodeURIComponent(m.id)}`,
+                                        {},
+                                        "DELETE",
+                                      )
+                                    ) {
+                                      if (member.id === m.id)
+                                        setMember(emptyMember);
+                                      setAccess((previous) =>
+                                        previous.member_id === m.id
+                                          ? { ...previous, member_id: "" }
+                                          : previous,
+                                      );
+                                      setSelected((previous) =>
+                                        previous.filter((id) => id !== m.id),
+                                      );
+                                      setNotice("成员已删除。");
+                                    }
+                                  }}
+                                >
+                                  删除
+                                </button>
+                              </div>
                             ) : (
                               "只读"
                             )}

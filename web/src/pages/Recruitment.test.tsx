@@ -17,6 +17,7 @@ vi.mock("../components/WorkspaceShell.tsx", () => ({
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+  vi.restoreAllMocks();
   history.replaceState(null, "", "/");
 });
 
@@ -85,6 +86,55 @@ const props = {
   logout: vi.fn(),
   onSessionIssue: vi.fn(),
 } as ComponentProps<typeof WorkflowPage>;
+
+test("member deletion requires confirmation and refreshes the roster", async () => {
+  const data = initial();
+  data.state.members = [
+    {
+      id: "m",
+      name: "测试成员",
+      number: "001",
+      department: "",
+      phone: "",
+      session_id: "s1",
+      position_id: "p1",
+      source: "manual",
+      intent: "未填写",
+      platform: "",
+    },
+  ];
+  vi.mocked(request).mockImplementation(async (path, _body, method) => {
+    if (path.endsWith("/history"))
+      return { events: [], materials: [] } as never;
+    if (method === "DELETE")
+      return {
+        ...data,
+        version: 2,
+        state: { ...data.state, members: [] },
+      } as never;
+    return data as never;
+  });
+  const confirm = vi.spyOn(globalThis, "confirm").mockReturnValue(false);
+  render(<WorkflowPage {...props} initialTab="recruit" />);
+  const button = await screen.findByRole("button", {
+    name: "删除",
+  });
+  const user = userEvent.setup();
+  await user.click(button);
+  expect(
+    vi.mocked(request).mock.calls.some((call) => call[2] === "DELETE"),
+  ).toBe(false);
+  confirm.mockReturnValue(true);
+  await user.click(button);
+  await screen.findByText("成员已删除。");
+  expect(request).toHaveBeenCalledWith(
+    "/activity/projects/p/members/m",
+    {},
+    "DELETE",
+    1,
+  );
+  expect(screen.queryByRole("button", { name: "删除" })).toBeNull();
+});
 
 test("navigation follows the activity sequence and attachment3 is a placeholder", async () => {
   vi.mocked(request).mockImplementation(async (path) =>
@@ -259,6 +309,8 @@ test("fixed public questionnaire submits multiple choices and notes", async () =
         name: "测试成员",
         number: "001",
         notes: "可协助布场",
+        session_id: "s1",
+        position_id: "p1",
         assignments: [
           { session_id: "s1", position_id: "p1" },
           { session_id: "s2", position_id: "p2" },

@@ -167,6 +167,7 @@ var errInvalid = errors.New("workflow: invalid operation")
 var errPermission = errors.New("workflow: permission denied")
 var errClosed = errors.New("workflow: window closed")
 var errHoursNotReady = errors.New("workflow: first session has not ended or preparation unconfirmed")
+var errMemberHasRecords = errors.New("workflow: member has attendance or hours")
 
 func newID() string {
 	var value [16]byte
@@ -219,6 +220,8 @@ func failWorkflow(c *gin.Context, err error) {
 		code = errhandler.QuestionnaireClosed
 	case errors.Is(err, errHoursNotReady):
 		code = errhandler.HoursNotReady
+	case errors.Is(err, errMemberHasRecords):
+		code = errhandler.MemberHasRecords
 	}
 	errhandler.Fail(c, code)
 }

@@ -6,6 +6,7 @@ import {
   memberAssignments,
 } from "../lib/workflow.ts";
 import AssignmentPicker from "../components/AssignmentPicker.tsx";
+import ThemeSelect from "../components/ThemeSelect.tsx";
 import type {
   Member,
   ServiceSession,
@@ -136,6 +137,7 @@ export default function ParticipantPage() {
               ? "时长意向"
               : "项目登记"}
         </span>
+        <ThemeSelect />
       </div>
       <header className="public-header">
         <h1>
@@ -286,7 +288,12 @@ export default function ParticipantPage() {
                     member: Member;
                     credential: string;
                   }>(`${base}/forms/${formID}/responses`, {
-                    member: { ...member, assignments },
+                    member: {
+                      ...member,
+                      session_id: assignments[0].session_id,
+                      position_id: assignments[0].position_id,
+                      assignments,
+                    },
                     key,
                   });
                   setSavedCredential(result.credential);
