@@ -102,7 +102,7 @@ func (s *Service) Login(c *gin.Context) {
 		return
 	}
 	var u model.User
-	if s.DB.Where("username = ? AND status = ? AND password_hash <> ? AND password_setup_required = ?", strings.TrimSpace(req.Username), "active", "", false).First(&u).Error != nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
+	if s.DB.Where("username = ? AND status = ? AND password_hash <> ?", strings.TrimSpace(req.Username), "active", "").First(&u).Error != nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
 		errhandler.Fail(c, errhandler.InvalidCredentials)
 		return
 	}
@@ -311,6 +311,17 @@ func (s *Service) Middleware() gin.HandlerFunc {
 			return
 		}
 		c.Set("user", u)
+		c.Next()
+	}
+}
+
+// OptionalIdentity identifies a valid local session without protecting public
+// forms. A stale or absent session never turns an anonymous form into a login wall.
+func (s *Service) OptionalIdentity() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if u, err := s.current(c); err == nil && !u.PasswordSetupRequired {
+			c.Set("user", u)
+		}
 		c.Next()
 	}
 }
