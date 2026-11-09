@@ -10,7 +10,7 @@
 
 ## 当前实现
 
-当前仓库包含 Go + Gin + GORM 后端、开发用 React 登录页，以及账号密码登录、本地会话、登出和学校 SSO 授权码登录流程。开发模式会初始化认证表并创建默认管理员账号；生产模式要求 PostgreSQL，SSO 需配置上游凭据。项目台账、招募、时长、材料等业务模块仍未实现，详见 [`docs/project-proposal.md`](docs/project-proposal.md) 和 [`docs/task-01-auth-and-sso.md`](docs/task-01-auth-and-sso.md)。
+当前仓库包含 Go + Gin + GORM 后端和 React 管理端，已实现认证、超管用户管理、项目台账、立项及变更审批、招募与问卷二维码、成员身份凭证、现场签到签退、整数小时登记/批量导入/补录、附件1 DOCX版本、审核与审计历史。活动管理员负责本人项目基础信息、提交立项及现场出勤；数据管理员共享已提交项目，审批后承接招募、时长、材料及审核工作。业务数据持久化，签到不自动折算小时。地图、WPS迁移和外部系统自动录入仍为后续范围。详见 [权限及施工设计](docs/task-02-project-workflow.md)、[项目书](docs/project-proposal.md) 和 [认证设计](docs/task-01-auth-and-sso.md)。
 
 ## 环境要求
 
@@ -27,7 +27,7 @@ go mod download
 go run ./cmd/api
 ```
 
-服务默认监听 `:8080`，SQLite 默认数据库文件为 `data/volun-data.db`。数据库文件会在首次连接时创建；服务启动会初始化认证所需的数据表，其他业务表尚未实现。
+服务默认监听 `:8080`，SQLite 默认数据库文件为 `data/volun-data.db`。数据库文件会在首次连接时创建；服务启动执行版本迁移，包含认证、项目和工作流表。前端在 web 下执行 yarn install、yarn dev，通过 Vite 代理 /api。
 
 ```powershell
 Invoke-RestMethod http://localhost:8080/healthz

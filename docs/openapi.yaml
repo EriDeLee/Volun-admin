@@ -1,15 +1,16 @@
 openapi: 3.0.3
 info:
   title: 志愿服务平台 API
-  version: 0.4.0
+  version: 0.6.0
   description: |
-    本文覆盖当前已实现的认证、活动管理员首页、项目台账与基础详情接口。
+    本文覆盖认证、用户管理、项目台账、立项审批及持久化工作流。详细职责见 task-02-project-workflow.md。
     首页仅聚合已持久化的项目信息，不以演示数据填充生产页面。
-    超管查看全部项目；活动管理员仅查看自己创建的项目。后续项目协作授权另行扩展。
+    超管查看全部项目；活动管理员仅查看本人项目；数据管理员共享已提交项目，草稿除外。
+    用户管理仅超管可访问，列表与更新均不返回 sub、密码摘要或上游令牌。
     新建项目初始状态为立项。报名不产生时长，保存时长或下载材料不推进项目状态。
-    时长模块尚未实现，recognized_hours 为 null，而非虚构的 0。
+    首页 recognized_hours 汇总暂未接入，仍为 null；工作流可读取独立的小时记录。
     JSON 接口返回统一信封；SSO 发起和回调返回浏览器重定向。
-    本地会话使用 HttpOnly Cookie，不向前端返回 sub、密码摘要或上游令牌。
+    本地会话使用 HttpOnly Cookie。
 servers:
   - url: /
     description: 同源服务；开发时前端通过 Vite 代理 /api
@@ -18,6 +19,12 @@ tags:
     description: 已实现的认证接口；不包含尚未实现的 CSRF 令牌签发、资料编辑和找回密码。
   - name: Activity
     description: 活动管理员首页、分页项目台账、新建立项及基础详情。
+  - name: Admin
+    description: 超管用户目录；分配四个固定用户组、启停账号。不包含部门字典与邀请注册。
+  - name: Workflow
+    description: 管理端写请求要求版本头；数据管理员负责审批及批准后的数据工作，活动管理员负责本人基础信息及现场出勤。
+  - name: WorkflowPublic
+    description: 公开问卷及本人凭证访问，不授予后台权限；限流120次每分钟，拒绝缓存。
 paths:
   /api/v1/auth/login:
     post:
@@ -25,7 +32,7 @@ paths:
       operationId: login
       summary: 账号密码登录
       security: []
-      description: 校验启用账号及 bcrypt 密码，成功签发平台 Cookie。必须先完成首次密码设置。
+      description: 校验启用账号及 bcrypt 密码，成功签发平台 Cookie。管理员添加、导入或重置密码后的账号可凭临时密码登录，但必须先设置新密码才能使用业务功能；尚无平台密码的SSO账号先经统一认证设置密码。
       requestBody:
         required: true
         content:
@@ -169,7 +176,7 @@ paths:
       summary: 读取活动管理首页
       security: [{sessionCookie: []}]
       description: |
-        需要 activity_admin 或 super_admin，且已完成首次设密。
+        需要 activity_admin、data_admin 或 super_admin，且已完成首次设密。
         统计口径为全部时间、当前权限范围内的项目，不伪称本学期统计。
         待办为立项/筹备/招募/结项/意向阶段的项目，每项目一个跟进任务，最新更新优先。
         recent_projects 最多 12 条，tasks 最多 5 条；统计为全部授权项目，不仅是返回的列表。
@@ -197,13 +204,13 @@ paths:
       summary: 分页查询项目台账
       security: [{sessionCookie: []}]
       description: |
-        需要 activity_admin 或 super_admin，且已完成首次设密。
+        需要 activity_admin、data_admin 或 super_admin，且已完成首次设密。
         活动管理员仅查询本人创建的项目；超管查询全部项目。
         q 按项目名称或编号进行字面子串搜索，% 和 _ 不作为通配符。
         status、department、view 与关键词组合筛选；按 updated_at DESC、id DESC 排序。
         total 是筛选后的总数；summary 和 departments 是筛选前、权限范围内全部项目的信息。
         pending 包含立项、筹备、招募、结项、意向，不代表独立审核工单。
-        不返回内部用户 sub 或 created_by。时长模块未接入，recognized_hours 返回 null。
+        不返回内部用户 sub 或 created_by。首页小时汇总未接入，recognized_hours 返回 null。
         page 和 page_size 非整数、越界，或状态/视图不合法时返回 400；超出结果页返回空 items。
       parameters:
         - in: query
@@ -280,7 +287,7 @@ paths:
       operationId: getActivityProject
       summary: 读取项目基础详情
       security: [{sessionCookie: []}]
-      description: 活动管理员只能读取本人创建的项目；不存在或不在数据范围内统一返回 404。
+      description: 活动管理员只能读取本人项目；数据管理员读取全部已提交项目；超管读取全局。不存在或不在范围内返回 404。
       parameters:
         - in: path
           name: id
@@ -300,6 +307,1603 @@ paths:
               schema: {$ref: '#/components/schemas/Error'}
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/v1/admin/users:
+    post:
+      tags: [Admin]
+      operationId: createAdminUser
+      summary: 手动新增单个成员
+      security: [{sessionCookie: []}]
+      description: 仅超管。共享CSV导入校验，重复账号不覆盖，初次登录强制设密。请求体最多8KiB，返回同批量导入结构，valid=false表示校验失败且未创建。
+      parameters:
+        - $ref: '#/components/parameters/RequestedWith'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, name, id, password]
+              properties:
+                username: {type: string, maxLength: 120}
+                name: {type: string, maxLength: 80}
+                id: {type: string, maxLength: 120}
+                password: {type: string, format: password, writeOnly: true, description: 12至72字节}
+                groups: {type: array, items: {type: string, enum: [super_admin, data_admin, activity_admin, formal_user]}}
+      responses:
+        '200':
+          description: 校验及创建结果，包含valid、imported、rows，与批量导入响应一致。
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags: [Admin]
+      operationId: listAdminUsers
+      summary: 分页查询用户目录
+      security: [{sessionCookie: []}]
+      description: |
+        需要 super_admin，且已完成首次设密。
+        q 按登录账号、姓名或学号/人员编号做字面子串搜索，% 和 _ 不作为通配符。
+        status、group 与关键词组合筛选；按 updated_at DESC、username ASC 排序。
+        total 是筛选后的总数；summary 是筛选前全库用户统计。
+        不返回 sub、密码摘要或会话标识。page 与 page_size 非法时返回 400。
+      parameters:
+        - in: query
+          name: q
+          schema: {type: string, maxLength: 160}
+          description: 账号、姓名或学号/人员编号的字面子串；去除首尾空白。
+        - in: query
+          name: status
+          schema: {type: string, enum: [active, disabled]}
+          description: 留空表示全部状态。
+        - in: query
+          name: group
+          schema:
+            type: string
+            enum: [super_admin, data_admin, activity_admin, formal_user]
+          description: 拥有该用户组的账号；一人可属多组。
+        - in: query
+          name: page
+          schema: {type: integer, minimum: 1, maximum: 1000000, default: 1}
+        - in: query
+          name: page_size
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        '200':
+          description: 分页用户及全库摘要。
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/AdminUserList'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/admin/users/import:
+    post:
+      tags: [Admin]
+      operationId: importAdminUsers
+      summary: 预检或批量新增平台成员
+      security: [{sessionCookie: []}]
+      description: |
+        仅超管可用。JSON请求体最多256KiB，CSV必须为UTF-8（允许BOM），表头为账号,姓名,学号,初始密码,用户组，每批1至100行。
+        初始密码12至72字节，用户组使用固定代码，以 | 分隔，空值默认formal_user。
+        commit=false只预检；commit=true重新校验并原子写入，任何行无效则整批不写入，账号已存在不会覆盖。
+        密码不返回、不以明文存储。新账号首次登录需设置新密码。
+      parameters:
+        - $ref: '#/components/parameters/RequestedWith'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [csv]
+              properties:
+                csv: {type: string, writeOnly: true}
+                commit: {type: boolean, default: false}
+      responses:
+        '200':
+          description: 预检结果；valid=false表示存在逐行错误，imported始终为0。
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          valid: {type: boolean}
+                          imported: {type: integer}
+                          rows:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                line: {type: integer}
+                                username: {type: string}
+                                name: {type: string}
+                                id: {type: string}
+                                groups: {type: array, items: {type: string}}
+                                error: {type: string}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/activity/approvals:
+    get:
+      tags: [Workflow]
+      operationId: listProjectApprovals
+      summary: 分页读取待审批的立项及基础信息变更申请
+      security: [{sessionCookie: []}]
+      description: 仅数据管理员及超管可用；包含已批准项目的待审变更。按项目ID、项目内申请顺序稳定分页。
+      parameters:
+        - in: query
+          name: q
+          schema: {type: string, maxLength: 160}
+        - in: query
+          name: page
+          schema: {type: integer, minimum: 1, maximum: 1000000, default: 1}
+        - in: query
+          name: page_size
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        '200':
+          description: 待审申请列表，审批操作使用详情工作流的当前版本。
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          total: {type: integer}
+                          page: {type: integer}
+                          page_size: {type: integer}
+                          items:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                project: {$ref: '#/components/schemas/Project'}
+                                application: {$ref: '#/components/schemas/WorkflowApplication'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/admin/users/{username}/reset-password:
+    post:
+      tags: [Admin]
+      operationId: resetAdminUserPassword
+      summary: 设置成员临时密码并强制下次改密
+      security: [{sessionCookie: []}]
+      description: 仅超管。密码摘要更新、标记需设密及撤销全部现有会话在同一事务提交。保持账号状态及用户组。不能重置当前账号或用户名对应多个身份的账号。请求体最多8KiB。
+      parameters:
+        - $ref: '#/components/parameters/RequestedWith'
+        - in: path
+          name: username
+          required: true
+          schema: {type: string, maxLength: 120}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: {type: string, format: password, writeOnly: true, description: 12至72字节}
+      responses:
+        '200':
+          description: 返回成员公开信息，不含临时密码。
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/AdminUser'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: 成员不存在。
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/admin/users/{username}:
+    patch:
+      tags: [Admin]
+      operationId: updateAdminUser
+      summary: 更新用户组或账号状态
+      security: [{sessionCookie: []}]
+      description: |
+        需要 super_admin。路径参数为登录账号 username，不是 sub。
+        可单独或同时更新 status 与 groups；至少提供一项。
+        groups 仅允许四个固定用户组，去重后按固定顺序保存，至少保留一组。
+        禁止停用当前登录超管自身，禁止去掉自身的 super_admin。
+        停用账号时撤销该用户全部未失效会话。请求体最多 8 KiB。
+      parameters:
+        - $ref: '#/components/parameters/RequestedWith'
+        - in: path
+          name: username
+          required: true
+          schema: {type: string, maxLength: 120}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateAdminUser'}
+      responses:
+        '200':
+          description: 更新后的用户公开信息。
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/AdminUser'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: 用户不存在。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/activity/projects/{id}/workflow:
+    get:
+      tags:
+      - Workflow
+      summary: 读取项目工作流及操作能力
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+  /api/v1/activity/projects/{id}/basics:
+    put:
+      tags:
+      - Workflow
+      summary: 修改草稿或退回稿基础信息
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - XMLHttpRequest
+      - name: X-Workflow-Version
+        in: header
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowBasicsRequest'
+  /api/v1/activity/projects/{id}/submit:
+    post:
+      tags:
+      - Workflow
+      summary: 活动管理员提交立项
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - XMLHttpRequest
+      - name: X-Workflow-Version
+        in: header
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowVersionRequest'
+  /api/v1/activity/projects/{id}/changes:
+    post:
+      tags:
+      - Workflow
+      summary: 提交基础信息及场次变更，原版本继续生效
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - XMLHttpRequest
+      - name: X-Workflow-Version
+        in: header
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowBasicsRequest'
+  /api/v1/activity/projects/{id}/applications/{applicationID}/decision:
+    post:
+      tags:
+      - Workflow
+      summary: 数据管理员审批初次立项或变更
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: applicationID
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - XMLHttpRequest
+      - name: X-Workflow-Version
+        in: header
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowDecisionRequest'
+  /api/v1/activity/projects/{id}/members:
+    put:
+      tags:
+      - Workflow
+      summary: 数据管理员单人或批量维护成员
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - XMLHttpRequest
+      - name: X-Workflow-Version
+        in: header
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowMembersRequest'
+  /api/v1/activity/projects/{id}/members/access:
+    post:
+      tags:
+      - Workflow
+      summary: 核实账号绑定、撤销或重发本人凭证
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - XMLHttpRequest
+      - name: X-Workflow-Version
+        in: header
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowCredentialRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowAccessRequest'
+  /api/v1/activity/projects/{id}/forms:
+    put:
+      tags:
+      - Workflow
+      summary: 数据管理员配置招募及意向问卷
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - XMLHttpRequest
+      - name: X-Workflow-Version
+        in: header
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowFormRequest'
+  /api/v1/activity/projects/{id}/windows:
+    put:
+      tags:
+      - Workflow
+      summary: 配置签到签退窗口并轮换令牌
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - XMLHttpRequest
+      - name: X-Workflow-Version
+        in: header
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowWindow'
+  /api/v1/activity/projects/{id}/sessions/{sessionID}/attendance:
+    post:
+      tags:
+      - Workflow
+      summary: 现场登记出勤或有理由更正
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: sessionID
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - XMLHttpRequest
+      - name: X-Workflow-Version
+        in: header
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowAttendanceRequest'
+  /api/v1/activity/projects/{id}/hours:
+    put:
+      tags:
+      - Workflow
+      summary: 数据管理员批量登记整数小时、补录及更正
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - XMLHttpRequest
+      - name: X-Workflow-Version
+        in: header
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowHoursRequest'
+  /api/v1/activity/projects/{id}/transition:
+    post:
+      tags:
+      - Workflow
+      summary: 数据管理员流转业务状态及审核
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - XMLHttpRequest
+      - name: X-Workflow-Version
+        in: header
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowTransitionRequest'
+  /api/v1/activity/projects/{id}/material:
+    put:
+      tags:
+      - Workflow
+      summary: 数据管理员保存附件1配置
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - XMLHttpRequest
+      - name: X-Workflow-Version
+        in: header
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowMaterial'
+  /api/v1/activity/projects/{id}/material/generate:
+    post:
+      tags:
+      - Workflow
+      summary: 生成并保存不可变附件1版本
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - XMLHttpRequest
+      - name: X-Workflow-Version
+        in: header
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false}
+
+  /api/v1/activity/projects/{id}/history:
+    get:
+      tags:
+      - Workflow
+      summary: 读取审计及材料历史，不暴露内部快照
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowHistory'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+  /api/v1/activity/projects/{id}/forms/qr:
+    get:
+      tags:
+      - Workflow
+      summary: 下载问卷二维码
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: kind
+        in: query
+        schema:
+          type: string
+          enum:
+          - recruit
+          - intent
+      responses:
+        '200':
+          description: 成功
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+  /api/v1/activity/projects/{id}/sessions/{sessionID}/qr/{action}:
+    get:
+      tags:
+      - Workflow
+      summary: 下载签到签退二维码
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: sessionID
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: action
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+  /api/v1/activity/projects/{id}/members/export:
+    get:
+      tags:
+      - Workflow
+      summary: 数据管理员导出成员及小时CSV
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+  /api/v1/activity/projects/{id}/material/{fileID}:
+    get:
+      tags:
+      - Workflow
+      summary: 授权下载私有附件1
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: fileID
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+  /api/v1/public/projects/{id}/forms/{formID}:
+    get:
+      tags:
+      - WorkflowPublic
+      summary: 读取开放的公开问卷
+      security: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: formID
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowPublicForm'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+  /api/v1/public/projects/{id}/forms/{formID}/responses:
+    post:
+      tags:
+      - WorkflowPublic
+      summary: 公开报名，返回仅限本人凭证
+      security: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: formID
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - XMLHttpRequest
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowRegistrationResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowRegistrationRequest'
+  /api/v1/public/projects/{id}/access:
+    post:
+      tags:
+      - WorkflowPublic
+      summary: 交换本人凭证为HttpOnly Cookie
+      security: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - XMLHttpRequest
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowVerified'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowCredentialRequest'
+  /api/v1/public/projects/{id}/me:
+    get:
+      tags:
+      - WorkflowPublic
+      summary: 验证可信绑定或本人凭证后读取本人记录
+      security: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowOwnResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+    put:
+      tags:
+      - WorkflowPublic
+      summary: 在开放期间修改本人资料或意向
+      security: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - XMLHttpRequest
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowOwnResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowOwnUpdateRequest'
+  /api/v1/public/projects/{id}/me/bind:
+    post:
+      tags:
+      - WorkflowPublic
+      summary: 本人凭证及可信账号编号匹配后绑定
+      security: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - XMLHttpRequest
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowOwnResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false}
+
+  /api/v1/public/projects/{id}/sessions/{sessionID}/scan:
+    get:
+      tags:
+      - WorkflowPublic
+      summary: 读取有效窗口及本人匹配情况
+      security: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: sessionID
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: token
+        in: query
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowScanContext'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+    post:
+      tags:
+      - WorkflowPublic
+      summary: 验证本人身份后扫码，重复提交幂等
+      security: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: sessionID
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - XMLHttpRequest
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  errcode:
+                    type: integer
+                    minimum: 0
+                  message:
+                    type: string
+                  request_id:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/WorkflowAttendance'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 版本冲突、状态锁定或窗口关闭；errcode 为 100003、300002、400003。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowScanRequest'
 components:
   securitySchemes:
     sessionCookie:
@@ -346,7 +1950,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     Forbidden:
-      description: 无活动管理权限 200002、请求头校验失败 200008，或首次设密未完成 200009。
+      description: 无访问权限 200002、请求头校验失败 200008，或首次设密未完成 200009。
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -356,6 +1960,562 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
   schemas:
+    WorkflowBasics:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        department:
+          type: string
+        starts_on:
+          type: string
+        ends_on:
+          type: string
+        location:
+          type: string
+        description:
+          type: string
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowSession'
+    WorkflowSession:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        start:
+          type: string
+        end:
+          type: string
+        positions:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowPosition'
+    WorkflowPosition:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        capacity:
+          type: integer
+          minimum: 0
+        description:
+          type: string
+        hours:
+          allOf:
+          - type: integer
+            minimum: 0
+          nullable: true
+    WorkflowApplication:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        status:
+          type: string
+        basics:
+          $ref: '#/components/schemas/WorkflowBasics'
+        applicant:
+          type: string
+        reviewer:
+          type: string
+        reason:
+          type: string
+        review_reason:
+          type: string
+        reviewed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    WorkflowMember:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        number:
+          type: string
+        department:
+          type: string
+        phone:
+          type: string
+        session_id:
+          type: string
+        position_id:
+          type: string
+        source:
+          type: string
+        intent:
+          type: string
+        platform:
+          type: string
+    WorkflowState:
+      type: object
+      additionalProperties: false
+      properties:
+        basics:
+          $ref: '#/components/schemas/WorkflowBasics'
+        draft:
+          allOf:
+          - $ref: '#/components/schemas/WorkflowBasics'
+          nullable: true
+        applications:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowApplication'
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowMember'
+        windows:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowWindow'
+        attendance:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowAttendance'
+        hours:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowHour'
+        form:
+          $ref: '#/components/schemas/WorkflowForm'
+        intent_form:
+          $ref: '#/components/schemas/WorkflowForm'
+        material:
+          $ref: '#/components/schemas/WorkflowMaterial'
+        review:
+          $ref: '#/components/schemas/WorkflowReview'
+        legacy:
+          type: boolean
+    WorkflowForm:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        published:
+          type: boolean
+        title:
+          type: string
+        description:
+          type: string
+        deadline:
+          type: string
+    WorkflowWindow:
+      type: object
+      additionalProperties: false
+      properties:
+        session_id:
+          type: string
+        action:
+          type: string
+        mode:
+          type: string
+        open:
+          type: boolean
+        start:
+          type: string
+        end:
+          type: string
+        token:
+          type: string
+    WorkflowAttendance:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        member_id:
+          type: string
+        session_id:
+          type: string
+        action:
+          type: string
+        source:
+          type: string
+        reason:
+          type: string
+        actor:
+          type: string
+        at:
+          type: string
+          format: date-time
+    WorkflowHour:
+      type: object
+      additionalProperties: false
+      properties:
+        member_id:
+          type: string
+        hours:
+          allOf:
+          - type: integer
+            minimum: 0
+          nullable: true
+        recognized:
+          allOf:
+          - type: integer
+            minimum: 0
+          nullable: true
+        reason:
+          type: string
+        source:
+          type: string
+    WorkflowReview:
+      type: object
+      additionalProperties: false
+      properties:
+        external_result:
+          type: string
+        opinion:
+          type: string
+        published:
+          type: boolean
+        snapshot:
+          type: string
+        approved_at:
+          allOf:
+          - type: string
+            format: date-time
+          nullable: true
+    WorkflowMaterial:
+      type: object
+      additionalProperties: false
+      properties:
+        team:
+          type: string
+        audience:
+          type: string
+        registration_start:
+          type: string
+        registration_end:
+          type: string
+        checkin_rule:
+          type: string
+        checkin_start:
+          type: string
+        checkin_end:
+          type: string
+        max_daily_hours:
+          allOf:
+          - type: integer
+            minimum: 0
+          nullable: true
+        recruitment:
+          type: string
+        password:
+          type: string
+        guarantees:
+          type: array
+          items:
+            type: string
+        other_guarantee:
+          type: string
+        description:
+          type: string
+        contact_name:
+          type: string
+        contact_phone:
+          type: string
+        contact_mobile:
+          type: string
+        contact_email:
+          type: string
+        notes:
+          type: string
+        training:
+          type: string
+    WorkflowResult:
+      type: object
+      additionalProperties: false
+      properties:
+        project:
+          $ref: '#/components/schemas/Project'
+        version:
+          type: integer
+          minimum: 0
+        approval:
+          type: string
+          enum:
+          - draft
+          - pending
+          - approved
+          - returned
+        state:
+          $ref: '#/components/schemas/WorkflowState'
+        capabilities:
+          type: array
+          items:
+            type: string
+    WorkflowHoursRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        rows:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/WorkflowHour'
+    WorkflowMembersRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        members:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/WorkflowMember'
+        reason:
+          type: string
+    WorkflowBasicsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        basics:
+          $ref: '#/components/schemas/WorkflowBasics'
+        reason:
+          type: string
+    WorkflowVersionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          type: integer
+          minimum: 0
+    WorkflowDecisionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        decision:
+          type: string
+          enum:
+          - approved
+          - returned
+        reason:
+          type: string
+    WorkflowAccessRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        member_id:
+          type: string
+        username:
+          type: string
+        revoke:
+          type: boolean
+        reason:
+          type: string
+    WorkflowFormRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum:
+          - recruit
+          - intent
+        published:
+          type: boolean
+        title:
+          type: string
+        description:
+          type: string
+        deadline:
+          type: string
+        rotate:
+          type: boolean
+    WorkflowAttendanceRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        member_id:
+          type: string
+        action:
+          type: string
+          enum:
+          - checkin
+          - checkout
+          - absent
+        reason:
+          type: string
+        correction:
+          type: boolean
+    WorkflowTransitionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          $ref: '#/components/schemas/ProjectStatus'
+        reason:
+          type: string
+        external_result:
+          type: string
+    WorkflowRegistrationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        member:
+          $ref: '#/components/schemas/WorkflowMember'
+        key:
+          type: string
+          minLength: 16
+          maxLength: 80
+    WorkflowCredentialRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        credential:
+          type: string
+    WorkflowOwnUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        department:
+          type: string
+        phone:
+          type: string
+        intent:
+          type: string
+        platform:
+          type: string
+    WorkflowScanRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        token:
+          type: string
+    WorkflowHistory:
+      type: object
+      additionalProperties: false
+      properties:
+        events:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              id:
+                type: string
+              version:
+                type: integer
+                minimum: 0
+              action:
+                type: string
+              actor:
+                type: string
+              reason:
+                type: string
+              created_at:
+                type: string
+                format: date-time
+        materials:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              id:
+                type: string
+              version:
+                type: integer
+                minimum: 0
+              filename:
+                type: string
+              checksum:
+                type: string
+              template_checksum:
+                type: string
+              created_at:
+                type: string
+                format: date-time
+    WorkflowPublicForm:
+      type: object
+      additionalProperties: false
+      properties:
+        project:
+          type: string
+        kind:
+          type: string
+        form:
+          $ref: '#/components/schemas/WorkflowForm'
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowSession'
+    WorkflowOwnResult:
+      type: object
+      additionalProperties: false
+      properties:
+        member:
+          $ref: '#/components/schemas/WorkflowMember'
+        project:
+          type: string
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowSession'
+        attendance:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowAttendance'
+        hours:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowHour'
+    WorkflowRegistrationResult:
+      type: object
+      additionalProperties: false
+      properties:
+        member:
+          $ref: '#/components/schemas/WorkflowMember'
+        credential:
+          type: string
+    WorkflowVerified:
+      type: object
+      additionalProperties: false
+      properties:
+        verified:
+          type: boolean
+    WorkflowScanContext:
+      type: object
+      additionalProperties: false
+      properties:
+        project:
+          type: string
+        session_id:
+          type: string
+        action:
+          type: string
+        member:
+          allOf:
+            - $ref: '#/components/schemas/WorkflowMember'
+          nullable: true
     Envelope:
       type: object
       required: [errcode, message, data, request_id]
@@ -409,6 +2569,7 @@ components:
           properties:
             id: {type: string}
             code: {type: string, example: ZY-20261108-9B3B289DAFA1}
+            approval: {type: string, enum: [draft, pending, approved, returned]}
             status: {$ref: '#/components/schemas/ProjectStatus'}
             owner_name: {type: string, description: 当前活动负责人；非数据组审核负责人。}
             created_at: {type: string, format: date-time}
@@ -437,7 +2598,7 @@ components:
             project_count: {type: integer, format: int64, minimum: 0}
             recruiting_count: {type: integer, format: int64, minimum: 0}
             pending_count: {type: integer, format: int64, minimum: 0}
-            recognized_hours: {type: integer, nullable: true, description: 当前未接入时长模块，返回 null。}
+            recognized_hours: {type: integer, nullable: true, description: 首页小时汇总尚未接入，返回 null。}
     Dashboard:
       type: object
       required: [scope, generated_at, summary, tasks, recent_projects, stages]
@@ -451,7 +2612,7 @@ components:
             project_count: {type: integer, format: int64, minimum: 0}
             recruiting_count: {type: integer, format: int64, minimum: 0}
             pending_count: {type: integer, format: int64, minimum: 0}
-            recognized_hours: {type: integer, nullable: true, description: 尚未接入时长模块，当前为 null。}
+            recognized_hours: {type: integer, nullable: true, description: 首页小时汇总尚未接入，当前为 null。}
         tasks:
           type: array
           maxItems: 5
@@ -478,3 +2639,52 @@ components:
             properties:
               status: {$ref: '#/components/schemas/ProjectStatus'}
               count: {type: integer, format: int64, minimum: 0}
+
+    AdminUser:
+      type: object
+      required: [username, name, id, groups, status, password_setup_required, has_password, created_at, updated_at]
+      properties:
+        username: {type: string, description: 平台登录账号；管理接口的稳定键。}
+        name: {type: string}
+        id: {type: string, description: 学号或人员编号，保留前导零；不是 sub。}
+        groups:
+          type: array
+          minItems: 0
+          items:
+            type: string
+            enum: [super_admin, data_admin, activity_admin, formal_user]
+        status: {type: string, enum: [active, disabled]}
+        password_setup_required: {type: boolean}
+        has_password: {type: boolean, description: 是否已设置平台密码；不返回哈希。}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    AdminUserList:
+      type: object
+      required: [items, total, page, page_size, summary]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: {$ref: '#/components/schemas/AdminUser'}
+        total: {type: integer, format: int64, minimum: 0}
+        page: {type: integer, minimum: 1}
+        page_size: {type: integer, minimum: 1, maximum: 100}
+        summary:
+          type: object
+          required: [user_count, active_count, disabled_count, manager_count]
+          properties:
+            user_count: {type: integer, format: int64, minimum: 0}
+            active_count: {type: integer, format: int64, minimum: 0}
+            disabled_count: {type: integer, format: int64, minimum: 0}
+            manager_count: {type: integer, format: int64, minimum: 0, description: 拥有超管、数据管理员或活动管理员任一用户组的账号数。}
+    UpdateAdminUser:
+      type: object
+      properties:
+        status: {type: string, enum: [active, disabled]}
+        groups:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [super_admin, data_admin, activity_admin, formal_user]
+      description: 至少提供 status 或 groups 之一。
