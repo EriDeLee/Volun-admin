@@ -385,6 +385,9 @@ export default function WorkflowPage(
           }
           <input
             required={key === "name" || key === "number"}
+            readOnly={
+              !!member.identity_verified && (key === "name" || key === "number")
+            }
             value={member[key as "name" | "number" | "department" | "phone"]}
             onChange={(e) => updateMember(key as keyof Member, e.target.value)}
           />
@@ -1020,6 +1023,7 @@ export default function WorkflowPage(
                           "场次",
                           "岗位",
                           "来源",
+                          "身份",
                           "备注",
                           "操作",
                         ].map((v) => (
@@ -1056,6 +1060,13 @@ export default function WorkflowPage(
                               : m.source === "manual"
                                 ? "管理员录入"
                                 : m.source}
+                          </td>
+                          <td>
+                            {m.identity_source === "account"
+                              ? "账号身份已确认"
+                              : m.identity_verified
+                                ? "人工核实通过"
+                                : "手动填写 · 待核实"}
                           </td>
                           <td className="member-notes">{m.notes || "—"}</td>
                           <td>
@@ -1113,7 +1124,7 @@ export default function WorkflowPage(
                       ))}
                       {!members.length && (
                         <tr>
-                          <td colSpan={8} className="recruit-empty">
+                          <td colSpan={9} className="recruit-empty">
                             还没有成员。可由管理员录入，或分享报名问卷收集名单。
                           </td>
                         </tr>
@@ -1175,7 +1186,10 @@ export default function WorkflowPage(
                     >
                       校验并导入
                     </button>
-                    <h3>核实身份与凭证</h3>
+                    <h3>核实手动填写的身份</h3>
+                    <p>
+                      账号登录报名的身份已确认，无需人工核实。这里只处理手动填写的成员。
+                    </p>
                     <form
                       className="workflow-form"
                       onSubmit={(e) => {
@@ -1210,11 +1224,16 @@ export default function WorkflowPage(
                           }
                         >
                           <option value="">请选择</option>
-                          {members.map((m) => (
-                            <option key={m.id} value={m.id}>
-                              {m.name} · {m.number}
-                            </option>
-                          ))}
+                          {members
+                            .filter((m) => m.identity_source !== "account")
+                            .map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name} · {m.number}
+                                {m.identity_verified
+                                  ? "（已核实）"
+                                  : "（待核实）"}
+                              </option>
+                            ))}
                         </select>
                       </label>
                       <label>

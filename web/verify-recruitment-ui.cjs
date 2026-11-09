@@ -26,7 +26,10 @@ const os = require("node:os");
     await page.route("**/api/v1/**", async (route) => {
       const req = route.request(), url = new URL(req.url());
       let data;
-      if (url.pathname.endsWith("/auth/me")) data = { user };
+      if (url.pathname.endsWith("/auth/me")) {
+        if (new URL(page.url()).pathname === "/signup") return route.fulfill({ status: 401, json: { errcode: 200001, message: "未登录", data: null } });
+        data = { user };
+      }
       else if (url.pathname.endsWith("/admin/users")) data = { items: [user, { ...user, username: "student", name: "测试成员", id: "00123", groups: ["formal_user"] }], total: 2, page: 1, page_size: 20, summary: { user_count: 2, active_count: 2, disabled_count: 0, manager_count: 1 } };
       else if (url.pathname.endsWith("/workflow")) data = workflow;
       else if (url.pathname.endsWith("/history")) data = { events: [], materials: [{ id: "file", filename: "synthetic-附件1.docx", version: 1, created_at: "2026-11-09T08:00:00Z" }] };
@@ -97,6 +100,10 @@ const os = require("node:os");
     assert.equal(writes.length, 0);
     await shot("form-conflict-mobile");
     await page.goto("http://127.0.0.1:5173/signup?project=p&form=f");
+    await page.getByRole("button", { name: "学校 SSO 登录", exact: true }).waitFor();
+    await shot("identity-options-desktop");
+    await page.setViewportSize({ width: 390, height: 844 }); await shot("identity-options-mobile");
+    await page.getByRole("button", { name: "手动填写", exact: true }).click();
     await page.getByRole("textbox", { name: "姓名", exact: true }).fill("测试报名者");
     await page.getByRole("textbox", { name: "学号", exact: true }).fill("00124");
     await page.getByRole("textbox", { name: "联系电话", exact: true }).fill("13800000001");

@@ -266,10 +266,50 @@ test("concurrent form edit preserves the draft and requires review before writin
   ).toBe(false);
 });
 
+test("recruit form waits for its type without flashing an SSO prompt", async () => {
+  history.replaceState(null, "", "/signup?project=p&form=f");
+  let resolveForm!: (value: unknown) => void;
+  vi.mocked(request).mockImplementation(async (path) => {
+    if (path === "/auth/me")
+      throw Object.assign(new Error("未登录"), { status: 401 });
+    if (path.endsWith("/forms/f"))
+      return (await new Promise<unknown>((resolve) => {
+        resolveForm = resolve;
+      })) as never;
+    throw new Error("未报名");
+  });
+  render(<ParticipantPage />);
+  expect(screen.getByRole("status").textContent).toContain("正在加载");
+  expect(screen.queryByRole("button", { name: /SSO/ })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "姓名" })).toBeNull();
+  resolveForm({
+    project: "测试项目",
+    kind: "recruit",
+    form: initial().state.form,
+    sessions,
+  });
+  await screen.findByRole("button", { name: "学校 SSO 登录" });
+  expect(screen.queryByRole("textbox", { name: "姓名" })).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "手动填写" }));
+  await screen.findByRole("textbox", { name: "姓名" });
+});
+
+test("an unavailable recruit form shows its error without an SSO fallback", async () => {
+  history.replaceState(null, "", "/signup?project=p&form=f");
+  vi.mocked(request).mockRejectedValue(new Error("问卷或签到窗口已关闭"));
+  render(<ParticipantPage />);
+  await screen.findByRole("alert");
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(screen.queryByRole("button", { name: /SSO/ })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "姓名" })).toBeNull();
+});
+
 test("fixed public questionnaire submits multiple choices and notes", async () => {
   history.replaceState(null, "", "/signup?project=p&form=f");
   let submitted: unknown;
   vi.mocked(request).mockImplementation(async (path, body) => {
+    if (path === "/auth/me")
+      throw Object.assign(new Error("未登录"), { status: 401 });
     if (path.endsWith("/forms/f"))
       return {
         project: "测试项目",
@@ -285,6 +325,9 @@ test("fixed public questionnaire submits multiple choices and notes", async () =
     throw new Error(path);
   });
   render(<ParticipantPage />);
+  await userEvent.click(
+    await screen.findByRole("button", { name: "手动填写" }),
+  );
   await screen.findByRole("textbox", { name: "姓名" });
   expect(screen.queryByRole("textbox", { name: "部门" })).toBeNull();
   await userEvent.type(
@@ -318,4 +361,89 @@ test("fixed public questionnaire submits multiple choices and notes", async () =
       },
     }),
   );
+});
+
+test.each([false, true])(
+  "account identity is auto-filled after existing session or password login: %s",
+  async (passwordLogin) => {
+    history.replaceState(null, "", "/signup?project=p&form=f");
+    let loggedIn = !passwordLogin;
+    const authenticated = {
+      user: { name: "账号姓名", id: "001234", groups: ["formal_user"] },
+    };
+    vi.mocked(request).mockImplementation(async (path) => {
+      if (path === "/auth/login") {
+        loggedIn = true;
+        return authenticated as never;
+      }
+      if (path === "/auth/me") {
+        if (!loggedIn)
+          throw Object.assign(new Error("未登录"), { status: 401 });
+        return authenticated as never;
+      }
+      if (path.endsWith("/forms/f"))
+        return {
+          project: "测试项目",
+          kind: "recruit",
+          form: initial().state.form,
+          sessions,
+        } as never;
+      throw new Error("未报名");
+    });
+    render(<ParticipantPage />);
+    if (passwordLogin) {
+      await userEvent.click(
+        await screen.findByRole("button", { name: "账号密码登录" }),
+      );
+      await userEvent.type(screen.getByLabelText("平台账号"), "tester");
+      await userEvent.type(
+        screen.getByLabelText("平台密码"),
+        "synthetic-password",
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "登录并继续报名" }),
+      );
+    }
+    const name = await screen.findByRole<HTMLInputElement>("textbox", {
+      name: "姓名",
+    });
+    expect(name.value).toBe("账号姓名");
+    expect(name.readOnly).toBe(true);
+    expect(
+      screen.getByRole<HTMLInputElement>("textbox", { name: "学号" }).value,
+    ).toBe("001234");
+    expect(screen.queryByRole("button", { name: "手动填写" })).toBeNull();
+    expect(location.pathname + location.search).toBe(
+      "/signup?project=p&form=f",
+    );
+  },
+);
+
+test("identity review excludes account registrations", async () => {
+  const data = initial();
+  data.state.members = [
+    {
+      id: "account",
+      name: "账号成员",
+      number: "001",
+      identity_source: "account",
+      identity_verified: true,
+    },
+    {
+      id: "manual",
+      name: "手填成员",
+      number: "002",
+      identity_source: "manual",
+      identity_verified: false,
+    },
+  ] as Workflow["state"]["members"];
+  vi.mocked(request).mockImplementation(async (path) =>
+    path.endsWith("/history")
+      ? ({ events: [], materials: [] } as never)
+      : (data as never),
+  );
+  render(<WorkflowPage {...props} initialTab="recruit" />);
+  await screen.findByText("账号身份已确认");
+  expect(screen.queryByRole("option", { name: /账号成员/ })).toBeNull();
+  expect(screen.getByRole("option", { name: /手填成员.*待核实/ })).toBeTruthy();
 });

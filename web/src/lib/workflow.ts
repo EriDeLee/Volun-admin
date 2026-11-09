@@ -40,6 +40,8 @@ export interface Member {
   platform: string;
   notes?: string;
   assignments?: Assignment[];
+  identity_source?: "account" | "manual";
+  identity_verified?: boolean;
 }
 
 export const memberAssignments = (

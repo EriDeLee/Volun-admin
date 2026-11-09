@@ -97,6 +97,9 @@ func (s *Service) saveMembers(c *gin.Context) {
 			found := false
 			for i, old := range state.Members {
 				if old.ID == m.ID && m.ID != "" {
+					if old.IdentityVerified && (old.Name != m.Name || old.Number != m.Number) {
+						return "", errInvalid
+					}
 					// An attendance/hour fact may never be moved to another identity or assignment.
 					if old.Number != m.Number || !sameAssignments(old, m) {
 						for _, a := range state.Attendance {
@@ -114,6 +117,8 @@ func (s *Service) saveMembers(c *gin.Context) {
 						}
 					}
 					m.Source = old.Source
+					m.IdentitySource = old.IdentitySource
+					m.IdentityVerified = old.IdentityVerified
 					m.Intent = old.Intent
 					m.Platform = old.Platform
 					state.Members[i] = m
@@ -127,6 +132,8 @@ func (s *Service) saveMembers(c *gin.Context) {
 				}
 				m.ID = newID()
 				m.Source = "manual"
+				m.IdentitySource = "manual"
+				m.IdentityVerified = false
 				m.Intent = "未填写"
 				state.Members = append(state.Members, m)
 			}

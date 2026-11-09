@@ -7,6 +7,7 @@ import {
 } from "../lib/workflow.ts";
 import AssignmentPicker from "../components/AssignmentPicker.tsx";
 import ThemeSelect from "../components/ThemeSelect.tsx";
+import type { AuthSession } from "../types.ts";
 import type {
   Member,
   ServiceSession,
@@ -17,12 +18,18 @@ import type {
 } from "../lib/workflow.ts";
 
 export default function ParticipantPage() {
+  const [loading, setLoading] = useState(true);
   const params = new URLSearchParams(location.search),
     project = params.get("project") || "",
     formID = params.get("form"),
     sessionID = params.get("attendance"),
     token = params.get("token") || "";
   const base = `/public/projects/${encodeURIComponent(project)}`;
+  const [identity, setIdentity] = useState<AuthSession | null>(null);
+  const [entry, setEntry] = useState<"choose" | "password" | "manual">(
+    "choose",
+  );
+  const [account, setAccount] = useState({ username: "", password: "" });
   const [form, setForm] = useState<{
     project: string;
     form: PublishedForm;
@@ -60,8 +67,31 @@ export default function ParticipantPage() {
   const [intent, setIntent] = useState("申请录入"),
     [platform, setPlatform] = useState("");
   const [key] = useState(() => crypto.randomUUID());
+  const continueSetup = () => {
+    sessionStorage.setItem(
+      "participant_return",
+      location.pathname + location.search,
+    );
+    location.href = "/set-password";
+  };
   const refresh = async () => {
     if (formID) setForm(await request(`${base}/forms/${formID}`));
+    try {
+      const authenticated = await request<AuthSession>("/auth/me");
+      if (authenticated.password_setup_required) {
+        continueSetup();
+        return;
+      }
+      setIdentity(authenticated);
+      setMember((previous) => ({
+        ...previous,
+        name: authenticated.user.name || "",
+        number: authenticated.user.id || "",
+      }));
+    } catch (cause) {
+      if ((cause as { status?: number }).status !== 401) throw cause;
+      setIdentity(null);
+    }
     if (sessionID)
       setScan(
         await request(
@@ -81,6 +111,7 @@ export default function ParticipantPage() {
   };
   useEffect(() => {
     let active = true;
+    setLoading(true);
     (async () => {
       const hash = new URLSearchParams(location.hash.slice(1));
       const grant = hash.get("credential");
@@ -89,10 +120,17 @@ export default function ParticipantPage() {
         await request(`${base}/access`, { credential: grant });
         if (active) setNotice("本人访问凭证已验证。");
       }
+      if (params.has("sso")) {
+        setError("学校统一认证未完成，可重试，或使用账号密码登录、手动填写。");
+      }
       await refresh();
-    })().catch((e) => {
-      if (active) setError(e.message);
-    });
+    })()
+      .catch((e) => {
+        if (active) setError(e.message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
     return () => {
       active = false;
     };
@@ -144,12 +182,14 @@ export default function ParticipantPage() {
           {scan?.project || form?.project || own?.project || "志愿服务登记"}
         </h1>
         <p>
-          {scan
-            ? `${attendanceNames[scan.action]} · 请确认本人报名记录`
-            : form?.form.description ||
-              (form?.kind === "recruit"
-                ? "填写姓名、学号和电话，选择参加场次及岗位即可报名。"
-                : "使用学校账号或专属报名凭证访问本人记录。")}
+          {loading
+            ? "正在读取项目登记信息，请稍候。"
+            : scan
+              ? `${attendanceNames[scan.action]} · 请确认本人报名记录`
+              : form?.form.description ||
+                (form?.kind === "recruit"
+                  ? "填写姓名、学号和电话，选择参加场次及岗位即可报名。"
+                  : "使用学校账号或专属报名凭证访问本人记录。")}
         </p>
       </header>
       {error && (
@@ -162,8 +202,102 @@ export default function ParticipantPage() {
           {notice}
         </p>
       )}
-      <section className="public-form workflow-panel">
-        {!own && form?.kind !== "recruit" && (
+      {loading && <p role="status">正在加载登记信息…</p>}
+      <section
+        className="public-form workflow-panel"
+        hidden={loading || (!!formID && !form)}
+      >
+        {form?.kind === "recruit" && !own && !identity && (
+          <article className="workflow-session">
+            <h2>先确认报名身份</h2>
+            <p>登录后自动填入姓名和学号，无需再次核实身份。</p>
+            <div className="activity-actions">
+              <button
+                className="button primary"
+                disabled={busy}
+                onClick={login}
+              >
+                学校 SSO 登录
+              </button>
+              <button
+                className="button secondary"
+                disabled={busy}
+                onClick={() => setEntry("password")}
+              >
+                账号密码登录
+              </button>
+              <button
+                className="activity-text-button"
+                disabled={busy}
+                onClick={() => setEntry("manual")}
+              >
+                手动填写
+              </button>
+            </div>
+            {entry === "manual" && (
+              <p>手动填写的身份信息将在报名后由管理员核实。</p>
+            )}
+            {entry === "password" && (
+              <form
+                className="workflow-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void run(async () => {
+                    let authenticated: AuthSession;
+                    try {
+                      authenticated = await request<AuthSession>(
+                        "/auth/login",
+                        account,
+                      );
+                    } finally {
+                      setAccount((previous) => ({ ...previous, password: "" }));
+                    }
+                    if (authenticated.password_setup_required) {
+                      continueSetup();
+                      return;
+                    }
+                    await refresh();
+                    setNotice("登录成功，已自动填入账号身份信息。");
+                  });
+                }}
+              >
+                <label>
+                  平台账号
+                  <input
+                    required
+                    autoComplete="username"
+                    value={account.username}
+                    onChange={(event) =>
+                      setAccount({ ...account, username: event.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  平台密码
+                  <input
+                    required
+                    type="password"
+                    autoComplete="current-password"
+                    value={account.password}
+                    onChange={(event) =>
+                      setAccount({ ...account, password: event.target.value })
+                    }
+                  />
+                </label>
+                <button className="button primary" disabled={busy}>
+                  登录并继续报名
+                </button>
+              </form>
+            )}
+          </article>
+        )}
+        {form?.kind === "recruit" && !own && identity && (
+          <p className="success">
+            已登录：{identity.user.name} · {identity.user.id}
+            。姓名和学号已自动填入，无需人工核实身份。
+          </p>
+        )}
+        {!loading && !own && (!formID || form?.kind === "intent") && (
           <>
             <button className="button primary" onClick={login}>
               学校 SSO 登录并验证本人报名
@@ -215,18 +349,21 @@ export default function ParticipantPage() {
                 })
                 .join("、")}
             </p>
-            <button
-              disabled={busy}
-              className="button secondary"
-              onClick={() =>
-                void run(async () => {
-                  await request(`${base}/me/bind`, {});
-                  setNotice("已验证学校身份并关联本人报名。");
-                })
-              }
-            >
-              核对并关联当前学校身份
-            </button>
+            {!own.member.identity_verified && (
+              <button
+                disabled={busy}
+                className="button secondary"
+                onClick={() =>
+                  void run(async () => {
+                    await request(`${base}/me/bind`, {});
+                    await refresh();
+                    setNotice("已验证学校身份并关联本人报名。");
+                  })
+                }
+              >
+                核对并关联当前学校身份
+              </button>
+            )}
           </article>
         )}
         {scan && (
@@ -258,101 +395,108 @@ export default function ParticipantPage() {
             <p>重复扫码不会重复登记，也不会自动产生服务时长。</p>
           </article>
         )}
-        {form?.kind === "recruit" && (
-          <form
-            className="workflow-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!assignments.length) {
-                setError("请至少选择一个参加场次和岗位。");
-                return;
-              }
-              void run(async () => {
-                if (own) {
-                  await request(
-                    `${base}/me`,
-                    {
-                      name: member.name,
-                      department: member.department,
-                      phone: member.phone,
-                      notes: member.notes,
-                      assignments,
-                      intent: "",
-                      platform: "",
-                    },
-                    "PUT",
-                  );
-                  setNotice("本人信息已更新。");
-                } else {
-                  const result = await request<{
-                    member: Member;
-                    credential: string;
-                  }>(`${base}/forms/${formID}/responses`, {
-                    member: {
-                      ...member,
-                      session_id: assignments[0].session_id,
-                      position_id: assignments[0].position_id,
-                      assignments,
-                    },
-                    key,
-                  });
-                  setSavedCredential(result.credential);
-                  setNotice("报名成功，请保存下方本人修改入口。");
+        {form?.kind === "recruit" &&
+          (own || identity || entry === "manual") && (
+            <form
+              className="workflow-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!assignments.length) {
+                  setError("请至少选择一个参加场次和岗位。");
+                  return;
                 }
-                await refresh();
-              });
-            }}
-          >
-            <h2>{own ? "修改本人信息" : "志愿者报名"}</h2>
-            {["name", "number", "phone"].map((field) => (
-              <label key={field}>
-                {
-                  (
-                    {
-                      name: "姓名",
-                      number: "学号",
-                      department: "部门",
-                      phone: "联系电话",
-                    } as Record<string, string>
-                  )[field]
-                }
-                <input
-                  required
-                  type={field === "phone" ? "tel" : "text"}
-                  maxLength={
-                    field === "phone" ? 50 : field === "name" ? 80 : 120
+                void run(async () => {
+                  if (own) {
+                    await request(
+                      `${base}/me`,
+                      {
+                        name: member.name,
+                        department: member.department,
+                        phone: member.phone,
+                        notes: member.notes,
+                        assignments,
+                        intent: "",
+                        platform: "",
+                      },
+                      "PUT",
+                    );
+                    setNotice("本人信息已更新。");
+                  } else {
+                    const result = await request<{
+                      member: Member;
+                      credential: string;
+                    }>(`${base}/forms/${formID}/responses`, {
+                      member: {
+                        ...member,
+                        session_id: assignments[0].session_id,
+                        position_id: assignments[0].position_id,
+                        assignments,
+                      },
+                      key,
+                    });
+                    setSavedCredential(result.credential);
+                    setNotice("报名成功，请保存下方本人修改入口。");
                   }
-                  disabled={!!own && field === "number"}
-                  value={member[field as keyof typeof member]}
-                  onChange={(e) => change(field, e.target.value)}
+                  await refresh();
+                });
+              }}
+            >
+              <h2>{own ? "修改本人信息" : "志愿者报名"}</h2>
+              {["name", "number", "phone"].map((field) => (
+                <label key={field}>
+                  {
+                    (
+                      {
+                        name: "姓名",
+                        number: "学号",
+                        department: "部门",
+                        phone: "联系电话",
+                      } as Record<string, string>
+                    )[field]
+                  }
+                  <input
+                    required
+                    type={field === "phone" ? "tel" : "text"}
+                    maxLength={
+                      field === "phone" ? 50 : field === "name" ? 80 : 120
+                    }
+                    readOnly={
+                      (field === "name" || field === "number") &&
+                      (!!own?.member.identity_verified || (!own && !!identity))
+                    }
+                    disabled={!!own && field === "number"}
+                    value={member[field as keyof typeof member]}
+                    onChange={(e) => change(field, e.target.value)}
+                  />
+                </label>
+              ))}
+              <AssignmentPicker
+                sessions={form.sessions}
+                value={assignments}
+                onChange={setAssignments}
+                disabled={
+                  busy ||
+                  (!!own && (own.attendance.length > 0 || own.hours.length > 0))
+                }
+              />
+              <label>
+                其他备注
+                <textarea
+                  maxLength={1000}
+                  rows={3}
+                  value={member.notes}
+                  onChange={(e) => change("notes", e.target.value)}
+                  placeholder="可填写参加安排或其他需要说明的情况（选填）"
                 />
               </label>
-            ))}
-            <AssignmentPicker
-              sessions={form.sessions}
-              value={assignments}
-              onChange={setAssignments}
-              disabled={
-                busy ||
-                (!!own && (own.attendance.length > 0 || own.hours.length > 0))
-              }
-            />
-            <label>
-              其他备注
-              <textarea
-                maxLength={1000}
-                rows={3}
-                value={member.notes}
-                onChange={(e) => change("notes", e.target.value)}
-                placeholder="可填写参加安排或其他需要说明的情况（选填）"
-              />
-            </label>
-            <p>报名不会自动产生时长。学校身份与报名凭证仅用于本人记录验证。</p>
-            <button disabled={busy} className="button primary">
-              {own ? "保存本人修改" : "提交报名"}
-            </button>
-          </form>
-        )}
+              <p>
+                报名不会自动产生时长。学校身份与报名凭证仅用于本人记录验证。
+              </p>
+              <button disabled={busy} className="button primary">
+                {own ? "保存本人修改" : "提交报名"}
+              </button>
+            </form>
+          )}
         {savedCredential && (
           <div className="workflow-session">
             <h2>保存本人修改入口</h2>

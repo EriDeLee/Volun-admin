@@ -142,6 +142,11 @@ func (s *Service) submitPublicForm(c *gin.Context) {
 	req.Member.Number = strings.TrimSpace(req.Member.Number)
 	req.Member.Phone = strings.TrimSpace(req.Member.Phone)
 	u := actor(c)
+	// Authenticated identity comes exclusively from the server-side account.
+	if u.Sub != "" {
+		req.Member.Name = u.Name
+		req.Member.Number = u.ID
+	}
 	var result Member
 	credential := ""
 	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
@@ -190,6 +195,12 @@ func (s *Service) submitPublicForm(c *gin.Context) {
 		}
 		m.ID = newID()
 		m.Source = "questionnaire"
+		m.IdentitySource = "manual"
+		m.IdentityVerified = false
+		if u.Sub != "" {
+			m.IdentitySource = "account"
+			m.IdentityVerified = true
+		}
 		m.Intent = "未填写"
 		state.Members = append(state.Members, m)
 		if u.Sub != "" {
@@ -300,6 +311,9 @@ func (s *Service) updateOwnMember(c *gin.Context) {
 			if !formOpen(state.Form) || p.Status != "招募" && p.Status != "筹备" {
 				return errClosed
 			}
+			if m.IdentityVerified && req.Name != m.Name {
+				return errInvalid
+			}
 			m.Name = req.Name
 			m.Department = req.Department
 			m.Phone = req.Phone
@@ -375,13 +389,13 @@ func (s *Service) manageGrant(c *gin.Context) {
 		if parseErr != nil || version != row.Version {
 			return errConflict
 		}
-		found := false
-		for _, m := range state.Members {
+		var member *Member
+		for i, m := range state.Members {
 			if m.ID == req.MemberID {
-				found = true
+				member = &state.Members[i]
 			}
 		}
-		if !found {
+		if member == nil || member.IdentitySource == "account" {
 			return errInvalid
 		}
 		if err := tx.Model(&model.ParticipantGrant{}).Where("project_id=? AND member_id=?", p.ID, req.MemberID).Update("revoked_at", time.Now().UTC()).Error; err != nil {
@@ -391,6 +405,9 @@ func (s *Service) manageGrant(c *gin.Context) {
 			var target model.User
 			if err := tx.Where("username=? AND status=?", req.Username, "active").First(&target).Error; err != nil {
 				return err
+			}
+			if member.Number != target.ID || member.Name != target.Name {
+				return errInvalid
 			}
 			for memberID, subject := range state.Bindings {
 				if subject == target.Sub && memberID != req.MemberID {
@@ -406,6 +423,8 @@ func (s *Service) manageGrant(c *gin.Context) {
 				return err
 			}
 		}
+		member.IdentitySource = "manual"
+		member.IdentityVerified = !req.Revoke
 		return saveState(tx, p, row, state, u, "member.access", req.Reason)
 	})
 	if err != nil {
@@ -439,7 +458,7 @@ func (s *Service) bindOwn(c *gin.Context) {
 			return err
 		}
 		m := state.Members[i]
-		if u.ID == "" || m.Number != u.ID {
+		if u.ID == "" || m.Number != u.ID || m.Name != u.Name {
 			return errPermission
 		}
 		if bound := state.Bindings[m.ID]; bound != "" && bound != u.Sub {
@@ -451,6 +470,8 @@ func (s *Service) bindOwn(c *gin.Context) {
 			}
 		}
 		state.Bindings[m.ID] = u.Sub
+		state.Members[i].IdentitySource = "account"
+		state.Members[i].IdentityVerified = true
 		return saveState(tx, p, row, state, u, "member.bind", "")
 	})
 	if err != nil {

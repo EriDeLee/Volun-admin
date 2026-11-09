@@ -68,6 +68,23 @@ func TestSSOStartUsesExactConfiguredRedirectURI(t *testing.T) {
 	}
 }
 
+func TestSSOUnavailableReturnsToRecruitForm(t *testing.T) {
+	s := testService(t, nil)
+	s.Config.SSOClientSecret = ""
+	s.Config.FrontendURL = "http://localhost:5173"
+	r := gin.New()
+	r.GET("/sso/start", s.SSOStart)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/sso/start?return_to="+url.QueryEscape("/signup?project=p&form=f"), nil))
+	target, err := url.Parse(w.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != 303 || target.Path != "/signup" || target.Query().Get("project") != "p" || target.Query().Get("form") != "f" || target.Query().Get("sso") != "unavailable" {
+		t.Fatalf("unexpected failure redirect: %d %s", w.Code, target)
+	}
+}
+
 func TestSSOCallbackExchangesTokenAndCreatesSession(t *testing.T) {
 	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/token" {

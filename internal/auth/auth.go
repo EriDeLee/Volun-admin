@@ -170,31 +170,41 @@ func (s *Service) Logout(c *gin.Context) {
 	errhandler.OK(c, nil)
 }
 
+func ssoFailureURL(base, returnTo, reason string) string {
+	if target, err := url.Parse(returnTo); err == nil && target.Path == "/signup" && target.Host == "" && target.Scheme == "" {
+		query := target.Query()
+		query.Set("sso", reason)
+		target.RawQuery = query.Encode()
+		return frontendURL(base, target.String())
+	}
+	return frontendURL(base, "/login?sso="+reason)
+}
+
 func (s *Service) SSOStart(c *gin.Context) {
+	ret := c.Query("return_to")
+	if !strings.HasPrefix(ret, "/") || strings.HasPrefix(ret, "//") || strings.ContainsAny(ret, "\\\r\n") {
+		ret = "/"
+	}
 	if s.Config.SSOClientID == "" || s.Config.SSOClientSecret == "" {
 		slog.Warn("SSO unavailable: missing server configuration", "request_id", c.GetString("request_id"), "client_id_configured", s.Config.SSOClientID != "", "client_secret_configured", s.Config.SSOClientSecret != "")
-		c.Redirect(303, frontendURL(s.Config.FrontendURL, "/login?sso=unavailable"))
+		c.Redirect(303, ssoFailureURL(s.Config.FrontendURL, ret, "unavailable"))
 		return
 	}
 	state, err := randomToken(24)
 	if err != nil {
 		slog.Error("SSO start failed: cannot create login state", "request_id", c.GetString("request_id"))
-		c.Redirect(303, frontendURL(s.Config.FrontendURL, "/login?sso=error"))
+		c.Redirect(303, ssoFailureURL(s.Config.FrontendURL, ret, "error"))
 		return
-	}
-	ret := c.Query("return_to")
-	if !strings.HasPrefix(ret, "/") || strings.HasPrefix(ret, "//") {
-		ret = "/"
 	}
 	if err = s.DB.Create(&model.LoginTransaction{ID: state[:32], StateDigest: digest(state), ReturnTo: ret, ExpiresAt: time.Now().UTC().Add(5 * time.Minute)}).Error; err != nil {
 		slog.Error("SSO start failed: cannot save login transaction", "request_id", c.GetString("request_id"))
-		c.Redirect(303, frontendURL(s.Config.FrontendURL, "/login?sso=error"))
+		c.Redirect(303, ssoFailureURL(s.Config.FrontendURL, ret, "error"))
 		return
 	}
 
 	nonce, err := randomToken(24)
 	if err != nil {
-		c.Redirect(303, frontendURL(s.Config.FrontendURL, "/login?sso=error"))
+		c.Redirect(303, ssoFailureURL(s.Config.FrontendURL, ret, "error"))
 		return
 	}
 
@@ -214,9 +224,10 @@ func (s *Service) SSOStart(c *gin.Context) {
 }
 func (s *Service) SSOCallback(c *gin.Context) {
 	slog.Debug("SSO callback received", "request_id", c.GetString("request_id"), "code_present", c.Query("code") != "", "state_present", c.Query("state") != "")
+	returnTo := ""
 	fail := func() {
 		slog.Warn("SSO callback failed", "request_id", c.GetString("request_id"))
-		c.Redirect(303, frontendURL(s.Config.FrontendURL, "/login?sso=failed"))
+		c.Redirect(303, ssoFailureURL(s.Config.FrontendURL, returnTo, "failed"))
 	}
 	state, code := c.Query("state"), c.Query("code")
 	if state == "" || code == "" {
@@ -228,6 +239,7 @@ func (s *Service) SSOCallback(c *gin.Context) {
 		fail()
 		return
 	}
+	returnTo = tx.ReturnTo
 	now := time.Now().UTC()
 	if s.DB.Model(&tx).Where("consumed_at IS NULL").Update("consumed_at", now).RowsAffected != 1 {
 		fail()
