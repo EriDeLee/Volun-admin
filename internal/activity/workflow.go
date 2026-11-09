@@ -198,7 +198,7 @@ func (s *Service) decideApplication(c *gin.Context) {
 		app.ReviewedAt = &now
 		if req.Decision == "approved" {
 			for _, m := range state.Members {
-				if !assigned(app.Basics, m.SessionID, m.PositionID) {
+				if !assignmentsValid(m, app.Basics) {
 					return "", errInvalid
 				}
 			}

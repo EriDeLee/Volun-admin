@@ -4,6 +4,175 @@
   gap: 7px;
 }
 
+.recruit-paths {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 20px 0;
+}
+.recruit-path {
+  display: flex;
+  align-items: center;
+  text-align: left;
+  gap: 12px;
+  padding: 18px;
+  background: #f8faff;
+  color: #233149;
+  border: 1px solid #dfe7f3;
+  border-radius: 8px;
+}
+.recruit-path > .icon {
+  color: var(--blue);
+}
+.recruit-path > span {
+  flex: 1;
+  min-width: 0;
+}
+.recruit-path strong,
+.recruit-path small {
+  display: block;
+}
+.recruit-path strong {
+  font-size: 14px;
+}
+.recruit-path small {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.recruit-path:hover {
+  border-color: #92afe9;
+  background: #f0f5ff;
+}
+.recruit-share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin: 18px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.recruit-share a {
+  color: var(--blue);
+}
+.workflow-table .recruit-empty {
+  padding: 32px 18px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+.workflow-table .member-notes {
+  white-space: normal;
+  min-width: 160px;
+  max-width: 260px;
+  overflow-wrap: anywhere;
+}
+.workflow-form.recruit-member-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-top: 28px;
+}
+.recruit-member-form h3 {
+  grid-column: 1 / -1;
+  margin: 0 0 4px;
+}
+.recruit-member-form > .assignment-picker,
+.recruit-member-form .recruit-full {
+  grid-column: 1 / -1;
+}
+.workflow-form fieldset.assignment-picker {
+  display: block;
+  border: 1px solid #dfe7f3;
+  padding: 16px;
+  border-radius: 8px;
+  min-width: 0;
+}
+.assignment-picker legend {
+  padding: 0 6px;
+  color: #233149;
+  font-size: 13px;
+  font-weight: 600;
+}
+.assignment-picker > p {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 16px;
+}
+.assignment-session + .assignment-session {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.assignment-session > div:first-child strong,
+.assignment-session > div:first-child small {
+  display: block;
+}
+.assignment-session strong {
+  font-size: 13px;
+}
+.assignment-session small {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 400;
+  margin-top: 4px;
+}
+.assignment-positions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.workflow-form .assignment-positions label {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid #e1e7f0;
+  background: #fafbfe;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  min-width: 0;
+}
+.workflow-form .assignment-positions label.selected {
+  border-color: #81a4ec;
+  background: #f0f5ff;
+}
+.workflow-form .assignment-positions input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 3px 0 0;
+  flex-shrink: 0;
+  accent-color: var(--blue);
+  padding: 0;
+}
+.assignment-positions span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.assignment-positions small {
+  display: block;
+}
+@media (max-width: 640px) {
+  .recruit-paths,
+  .assignment-positions,
+  .workflow-form.recruit-member-form {
+    grid-template-columns: 1fr;
+  }
+  .workflow-form.recruit-member-form {
+    padding: 16px;
+  }
+  .recruit-member-form > .button {
+    width: 100%;
+  }
+}
+
 /* Member import: keep the file, preview and commit stages visually distinct. */
 .account-fields {
   padding: 0;

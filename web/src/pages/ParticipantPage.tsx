@@ -1,12 +1,18 @@
 import { useEffect, useState } from "react";
 import { Brand } from "../components/WorkspaceShell.tsx";
-import { request, attendanceNames } from "../lib/workflow.ts";
+import {
+  request,
+  attendanceNames,
+  memberAssignments,
+} from "../lib/workflow.ts";
+import AssignmentPicker from "../components/AssignmentPicker.tsx";
 import type {
   Member,
   ServiceSession,
   PublishedForm,
   Attendance,
   Hour,
+  Assignment,
 } from "../lib/workflow.ts";
 
 export default function ParticipantPage() {
@@ -42,7 +48,9 @@ export default function ParticipantPage() {
     phone: "",
     session_id: "",
     position_id: "",
+    notes: "",
   });
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [credential, setCredential] = useState(""),
     [savedCredential, setSavedCredential] = useState(""),
     [error, setError] = useState(""),
@@ -62,7 +70,8 @@ export default function ParticipantPage() {
     try {
       const me = await request<NonNullable<typeof own>>(`${base}/me`);
       setOwn(me);
-      setMember(me.member);
+      setMember({ ...me.member, notes: me.member.notes || "" });
+      setAssignments(memberAssignments(me.member));
       setIntent(me.member.intent === "未填写" ? "申请录入" : me.member.intent);
       setPlatform(me.member.platform);
     } catch {
@@ -136,7 +145,9 @@ export default function ParticipantPage() {
           {scan
             ? `${attendanceNames[scan.action]} · 请确认本人报名记录`
             : form?.form.description ||
-              "使用学校账号或专属报名凭证访问本人记录。"}
+              (form?.kind === "recruit"
+                ? "填写姓名、学号和电话，选择参加场次及岗位即可报名。"
+                : "使用学校账号或专属报名凭证访问本人记录。")}
         </p>
       </header>
       {error && (
@@ -150,7 +161,7 @@ export default function ParticipantPage() {
         </p>
       )}
       <section className="public-form workflow-panel">
-        {!own && (
+        {!own && form?.kind !== "recruit" && (
           <>
             <button className="button primary" onClick={login}>
               学校 SSO 登录并验证本人报名
@@ -193,7 +204,14 @@ export default function ParticipantPage() {
             <h2>本人报名记录</h2>
             <p>
               {own.member.name} · {own.member.number} ·{" "}
-              {own.sessions.find((s) => s.id === own.member.session_id)?.name}
+              {memberAssignments(own.member)
+                .map((a) => {
+                  const session = own.sessions.find(
+                    (s) => s.id === a.session_id,
+                  );
+                  return `${session?.name || a.session_id} / ${session?.positions.find((p) => p.id === a.position_id)?.name || a.position_id}`;
+                })
+                .join("、")}
             </p>
             <button
               disabled={busy}
@@ -243,6 +261,10 @@ export default function ParticipantPage() {
             className="workflow-form"
             onSubmit={(e) => {
               e.preventDefault();
+              if (!assignments.length) {
+                setError("请至少选择一个参加场次和岗位。");
+                return;
+              }
               void run(async () => {
                 if (own) {
                   await request(
@@ -251,6 +273,8 @@ export default function ParticipantPage() {
                       name: member.name,
                       department: member.department,
                       phone: member.phone,
+                      notes: member.notes,
+                      assignments,
                       intent: "",
                       platform: "",
                     },
@@ -261,7 +285,10 @@ export default function ParticipantPage() {
                   const result = await request<{
                     member: Member;
                     credential: string;
-                  }>(`${base}/forms/${formID}/responses`, { member, key });
+                  }>(`${base}/forms/${formID}/responses`, {
+                    member: { ...member, assignments },
+                    key,
+                  });
                   setSavedCredential(result.credential);
                   setNotice("报名成功，请保存下方本人修改入口。");
                 }
@@ -270,59 +297,48 @@ export default function ParticipantPage() {
             }}
           >
             <h2>{own ? "修改本人信息" : "志愿者报名"}</h2>
-            {["name", "number", "department", "phone"].map((field) => (
+            {["name", "number", "phone"].map((field) => (
               <label key={field}>
                 {
                   (
                     {
                       name: "姓名",
-                      number: "学号 / 人员编号",
+                      number: "学号",
                       department: "部门",
                       phone: "联系电话",
                     } as Record<string, string>
                   )[field]
                 }
                 <input
-                  required={field === "name" || field === "number"}
+                  required
+                  type={field === "phone" ? "tel" : "text"}
+                  maxLength={
+                    field === "phone" ? 50 : field === "name" ? 80 : 120
+                  }
                   disabled={!!own && field === "number"}
                   value={member[field as keyof typeof member]}
                   onChange={(e) => change(field, e.target.value)}
                 />
               </label>
             ))}
+            <AssignmentPicker
+              sessions={form.sessions}
+              value={assignments}
+              onChange={setAssignments}
+              disabled={
+                busy ||
+                (!!own && (own.attendance.length > 0 || own.hours.length > 0))
+              }
+            />
             <label>
-              场次
-              <select
-                required
-                disabled={!!own}
-                value={member.session_id}
-                onChange={(e) => change("session_id", e.target.value)}
-              >
-                <option value="">请选择</option>
-                {form.sessions.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              岗位
-              <select
-                required
-                disabled={!!own}
-                value={member.position_id}
-                onChange={(e) => change("position_id", e.target.value)}
-              >
-                <option value="">请选择</option>
-                {form.sessions
-                  .find((s) => s.id === member.session_id)
-                  ?.positions.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-              </select>
+              其他备注
+              <textarea
+                maxLength={1000}
+                rows={3}
+                value={member.notes}
+                onChange={(e) => change("notes", e.target.value)}
+                placeholder="可填写参加安排或其他需要说明的情况（选填）"
+              />
             </label>
             <p>报名不会自动产生时长。学校身份与报名凭证仅用于本人记录验证。</p>
             <button disabled={busy} className="button primary">

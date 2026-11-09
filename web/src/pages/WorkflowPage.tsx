@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { ProjectPageProps } from "../types.ts";
 import WorkspaceShell from "../components/WorkspaceShell.tsx";
+import AssignmentPicker from "../components/AssignmentPicker.tsx";
+import Icon from "../components/Icon.tsx";
 import {
   request,
   approvalNames,
@@ -8,6 +10,7 @@ import {
   iso,
   localTime,
   sessionRangeError,
+  memberAssignments,
 } from "../lib/workflow.ts";
 import type {
   Workflow,
@@ -16,7 +19,17 @@ import type {
   Material,
   History,
   AttendanceWindow,
+  PublishedForm,
 } from "../lib/workflow.ts";
+
+const formSnapshot = (form: PublishedForm) =>
+  JSON.stringify([
+    form.id || "",
+    form.published,
+    form.title || "",
+    form.description || "",
+    form.deadline || "",
+  ]);
 
 const emptyMember: Member = {
   id: "",
@@ -29,6 +42,7 @@ const emptyMember: Member = {
   source: "",
   intent: "",
   platform: "",
+  notes: "",
 };
 const labels: Record<string, string> = {
   name: "项目名称",
@@ -106,6 +120,8 @@ export default function WorkflowPage(
   });
   const [qr, setQR] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
+  const mutationLock = useRef(false);
+  const [copying, setCopying] = useState(false);
   const handle = (e: unknown) => {
     const failure = e as Error & { status?: number; code?: number };
     setError(failure.message);
@@ -118,6 +134,16 @@ export default function WorkflowPage(
       setData(result);
       setBasics(structuredClone(result.state.draft || result.state.basics));
       setMaterial(result.state.material);
+      const saved = result.state.form;
+      if (saved.id)
+        setForm({
+          kind: "recruit",
+          published: saved.published,
+          title: saved.title,
+          description: saved.description,
+          deadline: saved.deadline,
+          rotate: false,
+        });
       setHistory(await request<History>(`${base}/history`));
     } catch (e) {
       handle(e);
@@ -128,26 +154,88 @@ export default function WorkflowPage(
   }, [id]);
   const can = (capability: string) => !!data?.capabilities.includes(capability);
   const mutate = async (path: string, body: unknown, method = "POST") => {
-    if (busy || !data) return;
+    if (mutationLock.current || busy || !data) return;
+    mutationLock.current = true;
     setBusy(true);
     setError("");
     setNotice("");
     try {
-      const result = await request<Workflow>(
-        base + path,
-        body,
-        method,
-        data.version,
-      );
+      let current = data;
+      const formKind = (body as { kind?: string }).kind;
+      const publishedForm = (value: Workflow) =>
+        formKind === "intent" ? value.state.intent_form : value.state.form;
+      if (path === "/forms") {
+        current = await request<Workflow>(`${base}/workflow`);
+        if (!current.capabilities.includes("forms.write")) {
+          setData(current);
+          throw new Error("当前项目已锁定问卷修改，请核对项目状态。");
+        }
+        if (
+          formSnapshot(publishedForm(current)) !==
+          formSnapshot(publishedForm(data))
+        ) {
+          setData(current);
+          throw new Error(
+            "问卷配置已由其他操作修改，已加载最新版本。你的填写内容已保留，请核对后再次保存。",
+          );
+        }
+      }
+      let result: Workflow;
+      try {
+        result = await request<Workflow>(
+          base + path,
+          body,
+          method,
+          current.version,
+        );
+      } catch (cause) {
+        const failure = cause as { status?: number; code?: number };
+        if (
+          path !== "/forms" ||
+          failure.status !== 409 ||
+          failure.code !== 100003
+        )
+          throw cause;
+        const latest = await request<Workflow>(`${base}/workflow`);
+        setData(latest);
+        if (
+          !latest.capabilities.includes("forms.write") ||
+          formSnapshot(publishedForm(latest)) !==
+            formSnapshot(publishedForm(current))
+        )
+          throw new Error(
+            "问卷配置或项目状态已变化，已加载最新版本。填写内容已保留，请核对后再次保存。",
+          );
+        result = await request<Workflow>(
+          base + path,
+          body,
+          method,
+          latest.version,
+        );
+      }
       setData(result);
       setBasics(structuredClone(result.state.draft || result.state.basics));
       setMaterial(result.state.material);
+      if (path === "/forms")
+        setForm((previous) => ({ ...previous, rotate: false }));
       setHistory(await request<History>(`${base}/history`));
       setNotice("已保存到服务器。");
       return true;
     } catch (e) {
       handle(e);
+      const failure = e as { status?: number; code?: number };
+      if (failure.status === 409 && failure.code === 100003) {
+        try {
+          setData(await request<Workflow>(`${base}/workflow`));
+          setError(
+            "项目数据已变化，已更新版本。填写内容已保留，请核对后重试。",
+          );
+        } catch {
+          /* Keep the original conflict visible. */
+        }
+      }
     } finally {
+      mutationLock.current = false;
       setBusy(false);
     }
   };
@@ -180,8 +268,10 @@ export default function WorkflowPage(
     sessions
       .find((s) => s.id === m.session_id)
       ?.positions.find((p) => p.id === m.position_id)?.name || m.position_id;
-  const rowAttendance = (memberID: string) =>
-    data?.state.attendance.filter((a) => a.member_id === memberID).at(-1);
+  const rowAttendance = (memberID: string, sessionID: string) =>
+    data?.state.attendance
+      .filter((a) => a.member_id === memberID && a.session_id === sessionID)
+      .at(-1);
   const saveBasics = (e: React.FormEvent) => {
     e.preventDefault();
     if (!basics || !data) return;
@@ -216,7 +306,7 @@ export default function WorkflowPage(
           },
         );
       }}
-      className="workflow-form"
+      className="workflow-form recruit-member-form"
     >
       <h3>{member.id ? "修改成员" : "登记成员"}</h3>
       {["name", "number", "department", "phone"].map((key) => (
@@ -233,42 +323,32 @@ export default function WorkflowPage(
           }
           <input
             required={key === "name" || key === "number"}
-            value={member[key as keyof Member]}
+            value={member[key as "name" | "number" | "department" | "phone"]}
             onChange={(e) => updateMember(key as keyof Member, e.target.value)}
           />
         </label>
       ))}
-      <label>
-        场次
-        <select
-          required
-          value={member.session_id}
-          onChange={(e) => updateMember("session_id", e.target.value)}
-        >
-          <option value="">请选择</option>
-          {sessions.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        岗位
-        <select
-          required
-          value={member.position_id}
-          onChange={(e) => updateMember("position_id", e.target.value)}
-        >
-          <option value="">请选择</option>
-          {sessions
-            .find((s) => s.id === member.session_id)
-            ?.positions.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-        </select>
+      <AssignmentPicker
+        sessions={sessions}
+        value={memberAssignments(member)}
+        disabled={busy}
+        onChange={(assignments) =>
+          setMember((m) => ({
+            ...m,
+            assignments,
+            session_id: assignments[0]?.session_id || "",
+            position_id: assignments[0]?.position_id || "",
+          }))
+        }
+      />
+      <label className="recruit-full">
+        备注
+        <textarea
+          rows={2}
+          maxLength={1000}
+          value={member.notes || ""}
+          onChange={(e) => updateMember("notes", e.target.value)}
+        />
       </label>
       <button className="button primary" disabled={busy}>
         保存成员
@@ -701,6 +781,97 @@ export default function WorkflowPage(
               <section className="panel workflow-panel">
                 <h2>成员名单</h2>
                 <p>共 {members.length} 人；报名与现场出勤、时长分别记录。</p>
+                {can("members.write") && (
+                  <div className="recruit-paths">
+                    <button
+                      type="button"
+                      className="recruit-path"
+                      onClick={() =>
+                        document
+                          .getElementById("member-registration")
+                          ?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "start",
+                          })
+                      }
+                    >
+                      <Icon name="people" />
+                      <span>
+                        <strong>管理员录入名单</strong>
+                        <small>单独登记，或批量粘贴已有名单</small>
+                      </span>
+                      <Icon name="arrow" />
+                    </button>
+                    <button
+                      type="button"
+                      className="recruit-path"
+                      onClick={() => {
+                        if (form.kind !== "recruit") {
+                          const saved = data.state.form;
+                          setForm({
+                            kind: "recruit",
+                            published: saved.id ? saved.published : true,
+                            title: saved.title || "志愿者报名",
+                            description: saved.description || "",
+                            deadline: saved.deadline || "",
+                            rotate: false,
+                          });
+                        }
+                        setTab("forms");
+                      }}
+                    >
+                      <Icon name="file" />
+                      <span>
+                        <strong>分享报名问卷</strong>
+                        <small>发布固定问卷，由成员自行填写</small>
+                      </span>
+                      <Icon name="arrow" />
+                    </button>
+                  </div>
+                )}
+                {can("forms.write") && data.state.form.id && (
+                  <div className="recruit-share">
+                    <strong>
+                      报名问卷 ·{" "}
+                      {data.state.form.published ? "已开放" : "已关闭"}
+                    </strong>
+                    <a
+                      target="_blank"
+                      rel="noreferrer"
+                      href={`/signup?project=${id}&form=${data.state.form.id}`}
+                    >
+                      打开报名问卷
+                    </a>
+                    <button
+                      className="activity-text-button"
+                      disabled={copying}
+                      onClick={async () => {
+                        setCopying(true);
+                        try {
+                          await navigator.clipboard.writeText(
+                            `${location.origin}/signup?project=${id}&form=${data.state.form.id}`,
+                          );
+                          setNotice(
+                            "报名问卷链接已复制，可以发给成员自行填写。",
+                          );
+                        } catch {
+                          setError("复制失败，请打开问卷后复制地址。");
+                        } finally {
+                          setCopying(false);
+                        }
+                      }}
+                    >
+                      复制报名链接
+                    </button>
+                    <a
+                      target="_blank"
+                      rel="noreferrer"
+                      href={`/api/v1${base}/forms/qr?kind=recruit`}
+                    >
+                      下载二维码
+                    </a>
+                  </div>
+                )}
                 {can("export") && (
                   <a
                     className="button secondary"
@@ -720,7 +891,7 @@ export default function WorkflowPage(
                           "场次",
                           "岗位",
                           "来源",
-                          "意向",
+                          "备注",
                           "操作",
                         ].map((v) => (
                           <th key={v}>{v}</th>
@@ -733,10 +904,31 @@ export default function WorkflowPage(
                           <td>{m.name}</td>
                           <td>{m.number}</td>
                           <td>{m.department}</td>
-                          <td>{nameOfSession(m.session_id)}</td>
-                          <td>{nameOfPosition(m)}</td>
-                          <td>{m.source}</td>
-                          <td>{m.intent}</td>
+                          <td>
+                            {[
+                              ...new Set(
+                                memberAssignments(m).map((a) =>
+                                  nameOfSession(a.session_id),
+                                ),
+                              ),
+                            ].join("、")}
+                          </td>
+                          <td>
+                            {memberAssignments(m)
+                              .map(
+                                (a) =>
+                                  `${nameOfSession(a.session_id)} / ${nameOfPosition({ ...m, ...a })}`,
+                              )
+                              .join("；")}
+                          </td>
+                          <td>
+                            {m.source === "questionnaire"
+                              ? "问卷报名"
+                              : m.source === "manual"
+                                ? "管理员录入"
+                                : m.source}
+                          </td>
+                          <td className="member-notes">{m.notes || "—"}</td>
                           <td>
                             {can("members.write") ? (
                               <button onClick={() => setMember(m)}>修改</button>
@@ -746,15 +938,22 @@ export default function WorkflowPage(
                           </td>
                         </tr>
                       ))}
+                      {!members.length && (
+                        <tr>
+                          <td colSpan={8} className="recruit-empty">
+                            还没有成员。可由管理员录入，或分享报名问卷收集名单。
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
                 {can("members.write") && (
                   <>
-                    {memberForm}
+                    <div id="member-registration">{memberForm}</div>
                     <h3>批量导入</h3>
                     <p>
-                      先选择上方场次和岗位，粘贴制表符分隔的姓名、编号、部门、电话。整批预检通过后保存；冲突时保留原名单。
+                      先选择上方场次和岗位，粘贴制表符分隔的姓名、编号、部门、电话、备注。名单会应用到已选的全部场次和岗位。
                     </p>
                     <textarea
                       aria-label="批量成员"
@@ -775,14 +974,21 @@ export default function WorkflowPage(
                           .trim()
                           .split(/\r?\n/)
                           .map((line) => {
-                            const [name, number, department = "", phone = ""] =
-                              line.split("\t");
+                            const [
+                              name,
+                              number,
+                              department = "",
+                              phone = "",
+                              notes = "",
+                            ] = line.split("\t");
                             return {
                               ...emptyMember,
                               name,
                               number,
                               department,
                               phone,
+                              notes,
+                              assignments: memberAssignments(member),
                               session_id: member.session_id,
                               position_id: member.position_id,
                             };
@@ -1039,42 +1245,50 @@ export default function WorkflowPage(
                       </tr>
                     </thead>
                     <tbody>
-                      {members.map((m) => (
-                        <tr key={m.id}>
-                          <td>{m.name}</td>
-                          <td>{nameOfSession(m.session_id)}</td>
-                          <td>
-                            {attendanceNames[
-                              rowAttendance(m.id)?.action || ""
-                            ] || "待签到"}
-                          </td>
-                          <td>
-                            {can("attendance.manage") &&
-                              ["checkin", "checkout", "absent"].map(
-                                (action) => (
-                                  <button
-                                    disabled={busy}
-                                    key={action}
-                                    onClick={() =>
-                                      void mutate(
-                                        `/sessions/${m.session_id}/attendance`,
-                                        {
-                                          member_id: m.id,
-                                          action,
-                                          reason,
-                                          correction:
-                                            can("hours.write") && !!reason,
-                                        },
-                                      )
-                                    }
-                                  >
-                                    {attendanceNames[action]}
-                                  </button>
-                                ),
-                              )}
-                          </td>
-                        </tr>
-                      ))}
+                      {members
+                        .flatMap((m) =>
+                          [
+                            ...new Set(
+                              memberAssignments(m).map((a) => a.session_id),
+                            ),
+                          ].map((session_id) => ({ ...m, session_id })),
+                        )
+                        .map((m) => (
+                          <tr key={`${m.id}-${m.session_id}`}>
+                            <td>{m.name}</td>
+                            <td>{nameOfSession(m.session_id)}</td>
+                            <td>
+                              {attendanceNames[
+                                rowAttendance(m.id, m.session_id)?.action || ""
+                              ] || "待签到"}
+                            </td>
+                            <td>
+                              {can("attendance.manage") &&
+                                ["checkin", "checkout", "absent"].map(
+                                  (action) => (
+                                    <button
+                                      disabled={busy}
+                                      key={action}
+                                      onClick={() =>
+                                        void mutate(
+                                          `/sessions/${m.session_id}/attendance`,
+                                          {
+                                            member_id: m.id,
+                                            action,
+                                            reason,
+                                            correction:
+                                              can("hours.write") && !!reason,
+                                          },
+                                        )
+                                      }
+                                    >
+                                      {attendanceNames[action]}
+                                    </button>
+                                  ),
+                                )}
+                            </td>
+                          </tr>
+                        ))}
                     </tbody>
                   </table>
                 </div>
@@ -1083,6 +1297,9 @@ export default function WorkflowPage(
             {tab === "forms" && can("forms.write") && (
               <section className="panel workflow-panel">
                 <h2>问卷与二维码</h2>
+                <p className="workflow-note">
+                  招募问卷固定收集姓名、学号、电话、参加场次和岗位（可多选）、其他备注。保存开放后即可复制链接或下载二维码分发。
+                </p>
                 <form
                   className="workflow-form"
                   onSubmit={(e) => {
@@ -1175,6 +1392,14 @@ export default function WorkflowPage(
                           {i ? "意向表" : "招募表"} ·{" "}
                           {f.published ? "已开放" : "已关闭"}
                         </strong>
+                        <p>当前标题：{f.title || "未设置"}</p>
+                        {f.description && <p>当前说明：{f.description}</p>}
+                        {f.deadline && (
+                          <p>
+                            截止时间：
+                            {new Date(f.deadline).toLocaleString("zh-CN")}
+                          </p>
+                        )}
                         <p>
                           <a
                             href={`/signup?project=${id}&form=${f.id}`}

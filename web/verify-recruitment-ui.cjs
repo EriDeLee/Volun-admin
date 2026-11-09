@@ -1,0 +1,84 @@
+const { chromium } = require("playwright-core");
+const assert = require("node:assert/strict");
+const fs = require("node:fs/promises");
+const path = require("node:path");
+const os = require("node:os");
+
+(async () => {
+  const output = path.join(os.tmpdir(), "volun-recruitment-ui");
+  await fs.mkdir(output, { recursive: true });
+  const browser = await chromium.launch({ executablePath: "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    const user = { username: "data-admin", name: "数据管理员", id: "00001", groups: ["data_admin"], status: "active", password_setup_required: false, has_password: true };
+    const sessions = ["上午场", "下午场"].map((name, i) => ({ id: `s${i + 1}`, name, start: "2026-11-12T08:00:00+08:00", end: "2026-11-12T12:00:00+08:00", positions: [{ id: `p${i + 1}`, name: i ? "服务保障" : "现场引导", capacity: 20, description: "协助现场秩序与咨询", hours: null }] }));
+    const basics = { name: "校园开放日志愿服务", department: "校团委", starts_on: "2026-11-12", ends_on: "2026-11-13", location: "学院路校区", description: "", sessions };
+    const project = { ...basics, id: "p", code: "ZY-TEST-001", status: "招募", owner_name: "测试负责人", approval: "approved" };
+    const form = { id: "f", published: true, title: "志愿者报名", description: "请选择可以参加的场次与岗位，可多选。", deadline: "" };
+    const member = { id: "m", name: "测试成员", number: "00123", department: "测试学院", phone: "13800000000", session_id: "s1", position_id: "p1", assignments: [{ session_id: "s1", position_id: "p1" }, { session_id: "s2", position_id: "p2" }], source: "questionnaire", intent: "未填写", platform: "", notes: "可协助提前布场" };
+    let workflow = { project, version: 1, approval: "approved", capabilities: ["read", "members.read", "members.write", "forms.write", "export", "attendance.manage"], state: { basics, draft: null, applications: [], members: [member], windows: [], attendance: [], hours: [], form, intent_form: { id: "", published: false, title: "", description: "", deadline: "" }, material: {}, review: { published: false }, legacy: false } };
+    const writes = [];
+    let registered = false, submitted;
+    await page.route("**/api/v1/**", async (route) => {
+      const req = route.request(), url = new URL(req.url());
+      let data;
+      if (url.pathname.endsWith("/auth/me")) data = { user };
+      else if (url.pathname.endsWith("/admin/users")) data = { items: [user, { ...user, username: "student", name: "测试成员", id: "00123", groups: ["formal_user"] }], total: 2, page: 1, page_size: 20, summary: { user_count: 2, active_count: 2, disabled_count: 0, manager_count: 1 } };
+      else if (url.pathname.endsWith("/workflow")) data = workflow;
+      else if (url.pathname.endsWith("/history")) data = { events: [], materials: [] };
+      else if (url.pathname.endsWith("/projects/p/forms") && req.method() === "PUT") {
+        writes.push(req.postDataJSON());
+        workflow = { ...workflow, version: workflow.version + 1, state: { ...workflow.state, form: { ...workflow.state.form, ...req.postDataJSON() } } };
+        data = workflow;
+      } else if (url.pathname.endsWith("/public/projects/p/forms/f")) data = { project: project.name, kind: "recruit", form, sessions };
+      else if (url.pathname.endsWith("/public/projects/p/me")) {
+        if (!registered) return route.fulfill({ status: 403, json: { errcode: 200002, message: "未报名", data: null } });
+        data = { project: project.name, member: { ...member, ...submitted.member }, sessions, attendance: [], hours: [] };
+      } else if (url.pathname.endsWith("/responses")) {
+        submitted = req.postDataJSON(); registered = true;
+        data = { member: { ...member, ...submitted.member }, credential: "synthetic-test-credential" };
+      } else throw new Error(`Unexpected API: ${req.method()} ${url.pathname}`);
+      await route.fulfill({ json: { errcode: 0, data } });
+    });
+    const shot = async (name) => {
+      await page.screenshot({ path: path.join(output, `${name}.png`), fullPage: true });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `overflow: ${name}`);
+    };
+    await page.goto("http://127.0.0.1:5173/users");
+    await page.getByText("测试成员", { exact: true }).waitFor();
+    for (const name of ["添加成员", "批量导入", "重置密码", "编辑"]) assert.equal(await page.getByRole("button", { name, exact: true }).count(), 0);
+    await shot("directory-desktop");
+    await page.setViewportSize({ width: 390, height: 844 }); await shot("directory-mobile");
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto("http://127.0.0.1:5173/projects/p?tab=recruit");
+    await page.getByRole("button", { name: /分享报名问卷/ }).waitFor();
+    await page.getByRole("columnheader", { name: "备注", exact: true }).waitFor();
+    await shot("recruit-desktop");
+    await page.setViewportSize({ width: 390, height: 844 }); await shot("recruit-mobile");
+    await page.getByRole("button", { name: /分享报名问卷/ }).click();
+    await page.getByRole("textbox", { name: "标题", exact: true }).fill("我的报名问卷");
+    workflow = { ...workflow, version: 2, state: { ...workflow.state, form: { ...form, title: "另一管理员的标题" } } };
+    await page.getByRole("button", { name: "保存问卷", exact: true }).click();
+    await page.getByRole("alert").filter({ hasText: "填写内容已保留" }).waitFor();
+    assert.equal(await page.getByRole("textbox", { name: "标题", exact: true }).inputValue(), "我的报名问卷");
+    assert.equal(writes.length, 0);
+    await shot("form-conflict-mobile");
+    await page.goto("http://127.0.0.1:5173/signup?project=p&form=f");
+    await page.getByRole("textbox", { name: "姓名", exact: true }).fill("测试报名者");
+    await page.getByRole("textbox", { name: "学号", exact: true }).fill("00124");
+    await page.getByRole("textbox", { name: "联系电话", exact: true }).fill("13800000001");
+    await page.getByRole("checkbox", { name: /现场引导/ }).check();
+    await page.getByRole("checkbox", { name: /服务保障/ }).check();
+    await page.getByRole("textbox", { name: "其他备注", exact: true }).fill("可协助提前布场");
+    await shot("questionnaire-mobile");
+    await page.setViewportSize({ width: 1440, height: 1000 }); await shot("questionnaire-desktop");
+    await page.getByRole("button", { name: "提交报名", exact: true }).click();
+    await page.getByRole("heading", { name: "本人报名记录", exact: true }).waitFor();
+    assert.equal(submitted.member.assignments.length, 2);
+    assert.equal(submitted.member.notes, "可协助提前布场");
+    assert.deepEqual(errors, []);
+    console.log(`Verified read-only directory, recruitment paths, form conflict and multi-choice registration. Screenshots: ${output}`);
+  } finally { await browser.close(); }
+})().catch((e) => { console.error(e); process.exitCode = 1; });

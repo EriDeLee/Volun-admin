@@ -57,18 +57,25 @@ type Application struct {
 	CreatedAt     time.Time  `json:"created_at"`
 }
 
-type Member struct {
-	ID         string `json:"id"`
-	UserSub    string `json:"-"`
-	Name       string `json:"name"`
-	Number     string `json:"number"`
-	Department string `json:"department"`
-	Phone      string `json:"phone"`
+type Assignment struct {
 	SessionID  string `json:"session_id"`
 	PositionID string `json:"position_id"`
-	Source     string `json:"source"`
-	Intent     string `json:"intent"`
-	Platform   string `json:"platform"`
+}
+
+type Member struct {
+	ID          string       `json:"id"`
+	UserSub     string       `json:"-"`
+	Name        string       `json:"name"`
+	Number      string       `json:"number"`
+	Department  string       `json:"department"`
+	Phone       string       `json:"phone"`
+	SessionID   string       `json:"session_id"`
+	PositionID  string       `json:"position_id"`
+	Source      string       `json:"source"`
+	Intent      string       `json:"intent"`
+	Platform    string       `json:"platform"`
+	Notes       string       `json:"notes"`
+	Assignments []Assignment `json:"assignments,omitempty"`
 }
 
 // Internal bindings use a separate map so JSON responses never expose SSO subjects.

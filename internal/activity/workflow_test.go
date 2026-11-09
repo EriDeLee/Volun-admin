@@ -204,7 +204,7 @@ func TestPublicIdentityPermissionsAndReview(t *testing.T) {
 		}
 		call("PUT", base+path, body, owner, nil, 403)
 	}
-	member := activity.Member{Name: "同学", Number: "001", SessionID: "s", PositionID: "pos"}
+	member := activity.Member{Name: "同学", Number: "001", Phone: "13800000000", SessionID: "s", PositionID: "pos"}
 	registration := map[string]any{"key": "random-registration-key-123456", "member": member}
 	w := call("POST", public+"/forms/form/responses", registration, "", nil, 200)
 	var cookie *http.Cookie

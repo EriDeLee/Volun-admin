@@ -346,7 +346,7 @@ paths:
       summary: 分页查询用户目录
       security: [{sessionCookie: []}]
       description: |
-        需要 super_admin，且已完成首次设密。
+        需要 super_admin 或 data_admin，且已完成首次设密。data_admin 仅可查询目录，账号创建、导入、修改和密码重置仍仅限 super_admin。
         q 按登录账号、姓名或学号/人员编号做字面子串搜索，% 和 _ 不作为通配符。
         status、group 与关键词组合筛选；按 updated_at DESC、username ASC 排序。
         total 是筛选后的总数；summary 是筛选前全库用户统计。
@@ -2040,6 +2040,13 @@ components:
         created_at:
           type: string
           format: date-time
+    WorkflowAssignment:
+      type: object
+      additionalProperties: false
+      required: [session_id, position_id]
+      properties:
+        session_id: {type: string}
+        position_id: {type: string}
     WorkflowMember:
       type: object
       additionalProperties: false
@@ -2064,6 +2071,18 @@ components:
           type: string
         platform:
           type: string
+        notes:
+          type: string
+          maxLength: 1000
+          description: 招募备注，与时长录入意向独立。
+        assignments:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          description: 多选场次及岗位。省略时兼容 session_id/position_id；返回的单选字段为首项。公开报名须填写姓名、学号、电话，任一所选岗位满额则整笔拒绝。
+          items:
+            $ref: '#/components/schemas/WorkflowAssignment'
     WorkflowState:
       type: object
       additionalProperties: false
@@ -2404,6 +2423,17 @@ components:
           type: string
         platform:
           type: string
+        notes:
+          type: string
+          maxLength: 1000
+        assignments:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          description: 招募开放且尚无出勤和时长记录时可修改，逐项检查名额。省略则保留原安排。
+          items:
+            $ref: '#/components/schemas/WorkflowAssignment'
     WorkflowScanRequest:
       type: object
       additionalProperties: false

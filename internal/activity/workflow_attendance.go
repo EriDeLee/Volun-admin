@@ -112,9 +112,10 @@ func (s *Service) staffAttendance(c *gin.Context) {
 				member = m
 			}
 		}
-		if member.ID == "" || member.SessionID != c.Param("sessionID") {
+		if member.ID == "" || !memberAssigned(member, c.Param("sessionID")) {
 			return "", errInvalid
 		}
+		member.SessionID = c.Param("sessionID")
 		w, ok := findWindow(*state, member.SessionID, req.Action)
 		if req.Action == "absent" {
 			w, ok = findWindow(*state, member.SessionID, "checkin")
@@ -152,7 +153,7 @@ func (s *Service) scanContext(c *gin.Context) {
 		return
 	}
 	var member *Member
-	if i, e := identifyMember(s.DB, c, p, &state); e == nil && state.Members[i].SessionID == w.SessionID {
+	if i, e := identifyMember(s.DB, c, p, &state); e == nil && memberAssigned(state.Members[i], w.SessionID) {
 		value := state.Members[i]
 		member = &value
 	}
@@ -184,9 +185,10 @@ func (s *Service) scanAttendance(c *gin.Context) {
 			return err
 		}
 		m := state.Members[index]
-		if m.SessionID != c.Param("sessionID") {
+		if !memberAssigned(m, c.Param("sessionID")) {
 			return errPermission
 		}
+		m.SessionID = c.Param("sessionID")
 		for _, w := range state.Windows {
 			if w.SessionID == m.SessionID && sameToken(w.Token, req.Token) && windowOpen(w) {
 				entry, changed, err := recordFact(&state, m, w.Action, "scan", "", "本人", false)

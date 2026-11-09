@@ -23,6 +23,10 @@ export interface Basics {
   description: string;
   sessions: ServiceSession[];
 }
+export interface Assignment {
+  session_id: string;
+  position_id: string;
+}
 export interface Member {
   id: string;
   name: string;
@@ -34,7 +38,18 @@ export interface Member {
   source: string;
   intent: string;
   platform: string;
+  notes?: string;
+  assignments?: Assignment[];
 }
+
+export const memberAssignments = (
+  member: Pick<Member, "session_id" | "position_id" | "assignments">,
+): Assignment[] =>
+  member.assignments?.length
+    ? member.assignments
+    : member.session_id && member.position_id
+      ? [{ session_id: member.session_id, position_id: member.position_id }]
+      : [];
 export interface Attendance {
   id: string;
   member_id: string;

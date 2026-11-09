@@ -137,6 +137,10 @@ func (s *Service) submitPublicForm(c *gin.Context) {
 		failWorkflow(c, errInvalid)
 		return
 	}
+	normalizeMember(&req.Member)
+	req.Member.Name = strings.TrimSpace(req.Member.Name)
+	req.Member.Number = strings.TrimSpace(req.Member.Number)
+	req.Member.Phone = strings.TrimSpace(req.Member.Phone)
 	u := actor(c)
 	var result Member
 	credential := ""
@@ -161,7 +165,7 @@ func (s *Service) submitPublicForm(c *gin.Context) {
 			}
 			for _, m := range state.Members {
 				if m.ID == previous.MemberID {
-					if m.Name != req.Member.Name || m.Number != req.Member.Number || m.Department != req.Member.Department || m.Phone != req.Member.Phone || m.SessionID != req.Member.SessionID || m.PositionID != req.Member.PositionID {
+					if m.Name != req.Member.Name || m.Number != req.Member.Number || m.Department != req.Member.Department || m.Phone != req.Member.Phone || m.Notes != req.Member.Notes || !sameAssignments(m, req.Member) {
 						return errConflict
 					}
 					result = m
@@ -172,7 +176,7 @@ func (s *Service) submitPublicForm(c *gin.Context) {
 		m := req.Member
 		m.Name = strings.TrimSpace(m.Name)
 		m.Number = strings.TrimSpace(m.Number)
-		if !validMember(m, state.Basics) || m.ID != "" || m.Intent != "" || m.Platform != "" {
+		if m.Phone == "" || !validMember(m, state.Basics) || m.ID != "" || m.Intent != "" || m.Platform != "" {
 			return errInvalid
 		}
 		for _, old := range state.Members {
@@ -180,23 +184,9 @@ func (s *Service) submitPublicForm(c *gin.Context) {
 				return errConflict
 			}
 		}
-		// Capacity is checked with the aggregate's compare-and-swap at commit.
-		for _, session := range state.Basics.Sessions {
-			if session.ID == m.SessionID {
-				for _, position := range session.Positions {
-					if position.ID == m.PositionID {
-						count := 0
-						for _, old := range state.Members {
-							if old.SessionID == m.SessionID && old.PositionID == m.PositionID {
-								count++
-							}
-						}
-						if count >= position.Capacity {
-							return errClosed
-						}
-					}
-				}
-			}
+		// All choices are validated and committed together under aggregate CAS.
+		if !hasCapacity(m, state) {
+			return errClosed
 		}
 		m.ID = newID()
 		m.Source = "questionnaire"
@@ -269,11 +259,13 @@ func (s *Service) ownMember(c *gin.Context) {
 
 func (s *Service) updateOwnMember(c *gin.Context) {
 	var req struct {
-		Name       string `json:"name"`
-		Department string `json:"department"`
-		Phone      string `json:"phone"`
-		Intent     string `json:"intent"`
-		Platform   string `json:"platform"`
+		Name        string        `json:"name"`
+		Department  string        `json:"department"`
+		Phone       string        `json:"phone"`
+		Intent      string        `json:"intent"`
+		Platform    string        `json:"platform"`
+		Notes       string        `json:"notes"`
+		Assignments *[]Assignment `json:"assignments"`
 	}
 	if !decodeBody(c, &req) {
 		return
@@ -311,6 +303,31 @@ func (s *Service) updateOwnMember(c *gin.Context) {
 			m.Name = req.Name
 			m.Department = req.Department
 			m.Phone = req.Phone
+			m.Notes = req.Notes
+			if req.Assignments != nil {
+				if len(*req.Assignments) == 0 {
+					return errInvalid
+				}
+				candidate := *m
+				candidate.Assignments = *req.Assignments
+				if !sameAssignments(*m, candidate) {
+					for _, a := range state.Attendance {
+						if a.MemberID == m.ID {
+							return errConflict
+						}
+					}
+					for _, h := range state.Hours {
+						if h.MemberID == m.ID {
+							return errConflict
+						}
+					}
+					if !hasCapacity(candidate, state) {
+						return errClosed
+					}
+				}
+				m.Assignments = *req.Assignments
+				normalizeMember(m)
+			}
 			if !validMember(*m, state.Basics) {
 				return errInvalid
 			}

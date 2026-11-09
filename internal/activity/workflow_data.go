@@ -54,7 +54,7 @@ func dataEditable(p *model.Project, u model.User) error {
 }
 
 func validMember(m Member, b Basics) bool {
-	return strings.TrimSpace(m.Name) != "" && len([]rune(m.Name)) <= 80 && strings.TrimSpace(m.Number) != "" && len(m.Number) <= 120 && len([]rune(m.Department)) <= 100 && len(m.Phone) <= 50 && assigned(b, m.SessionID, m.PositionID)
+	return strings.TrimSpace(m.Name) != "" && len([]rune(m.Name)) <= 80 && strings.TrimSpace(m.Number) != "" && len(m.Number) <= 120 && len([]rune(m.Department)) <= 100 && len(m.Phone) <= 50 && len([]rune(m.Notes)) <= 1000 && assignmentsValid(m, b)
 }
 
 func (s *Service) saveMembers(c *gin.Context) {
@@ -68,6 +68,9 @@ func (s *Service) saveMembers(c *gin.Context) {
 	if len(req.Members) == 0 || len(req.Members) > 500 {
 		failWorkflow(c, errInvalid)
 		return
+	}
+	for i := range req.Members {
+		normalizeMember(&req.Members[i])
 	}
 	s.mutate(c, "members.save", func(tx *gorm.DB, p *model.Project, row model.Workflow, state *State, u model.User) (string, error) {
 		if err := dataEditable(p, u); err != nil {
@@ -90,7 +93,7 @@ func (s *Service) saveMembers(c *gin.Context) {
 			for i, old := range state.Members {
 				if old.ID == m.ID && m.ID != "" {
 					// An attendance/hour fact may never be moved to another identity or assignment.
-					if old.Number != m.Number || old.SessionID != m.SessionID || old.PositionID != m.PositionID {
+					if old.Number != m.Number || !sameAssignments(old, m) {
 						for _, a := range state.Attendance {
 							if a.MemberID == m.ID {
 								return "", errConflict
@@ -351,7 +354,7 @@ func (s *Service) exportMembers(c *gin.Context) {
 	var out strings.Builder
 	out.WriteString("\ufeff")
 	writer := csv.NewWriter(&out)
-	_ = writer.Write([]string{"姓名", "人员编号", "部门", "场次", "岗位", "意向", "登记小时", "认定小时"})
+	_ = writer.Write([]string{"姓名", "人员编号", "部门", "电话", "场次", "岗位", "备注", "登记小时", "认定小时"})
 	for _, m := range state.Members {
 		hours, recognized := "", ""
 		for _, h := range state.Hours {
@@ -364,7 +367,25 @@ func (s *Service) exportMembers(c *gin.Context) {
 				}
 			}
 		}
-		values := []string{m.Name, m.Number, m.Department, m.SessionID, m.PositionID, m.Intent, hours, recognized}
+		sessionNames, positionNames := []string{}, []string{}
+		seen := map[string]bool{}
+		for _, choice := range memberAssignments(m) {
+			for _, session := range state.Basics.Sessions {
+				if session.ID != choice.SessionID {
+					continue
+				}
+				if !seen[session.ID] {
+					sessionNames = append(sessionNames, session.Name)
+					seen[session.ID] = true
+				}
+				for _, position := range session.Positions {
+					if position.ID == choice.PositionID {
+						positionNames = append(positionNames, session.Name+" / "+position.Name)
+					}
+				}
+			}
+		}
+		values := []string{m.Name, m.Number, m.Department, m.Phone, strings.Join(sessionNames, "、"), strings.Join(positionNames, "；"), m.Notes, hours, recognized}
 		for i, v := range values {
 			if strings.HasPrefix(strings.TrimSpace(v), "=") || strings.HasPrefix(strings.TrimSpace(v), "+") || strings.HasPrefix(strings.TrimSpace(v), "-") || strings.HasPrefix(strings.TrimSpace(v), "@") {
 				values[i] = "'" + v
