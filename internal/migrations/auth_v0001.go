@@ -12,6 +12,7 @@ func All() []migration.Step {
 		{Version: 1, Name: "auth_sub_primary_key", Up: authV1},
 		{Version: 2, Name: "sso_initial_password_setup", Up: authV2},
 		{Version: 3, Name: "activity_project_ledger", Up: activityV3},
+		{Version: 4, Name: "project_workflow_and_attendance", Up: workflowV4},
 	}
 }
 

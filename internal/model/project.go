@@ -14,6 +14,7 @@ type Project struct {
 	Location    string `gorm:"size:160"`
 	Description string `gorm:"size:2000"`
 	Status      string `gorm:"size:20;index"`
+	Approval    string `gorm:"size:20;index"`
 	CreatedBy   string `gorm:"size:128;index"` // Internal User.Sub; not a public response field.
 	OwnerName   string
 	CreatedAt   time.Time

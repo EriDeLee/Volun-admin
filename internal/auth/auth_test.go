@@ -324,8 +324,8 @@ func TestMigrateLegacyUserPrimaryKey(t *testing.T) {
 	if err := db.Model(&migration.Record{}).Count(&versions).Error; err != nil {
 		t.Fatal(err)
 	}
-	if versions != 4 {
-		t.Fatalf("migration versions = %d, want 4", versions)
+	if versions != 5 {
+		t.Fatalf("migration versions = %d, want 5", versions)
 	}
 	var user model.User
 	if err := db.First(&user, "sub = ?", "legacy-key").Error; err != nil {
