@@ -6,6 +6,13 @@ export const groupNames: Record<string, string> = {
   formal_user: "正式用户",
 };
 
+export const groupOptions = [
+  "super_admin",
+  "data_admin",
+  "activity_admin",
+  "formal_user",
+] as const;
+
 export const projectStatuses = [
   "立项",
   "筹备",
@@ -31,13 +38,24 @@ export const ssoErrors: Record<string, string> = {
 
 export const canManage = (data: AuthSession | null) =>
   data?.user?.groups?.some((g) =>
-    ["super_admin", "activity_admin"].includes(g),
+    ["super_admin", "activity_admin", "data_admin"].includes(g),
   );
 
 export const homePath = (data: AuthSession | null) =>
   canManage(data) ? "/activity" : "/profile";
 
-export const managerPaths = ["/activity", "/projects", "/hours", "/materials"];
+export const managerPaths = [
+  "/activity",
+  "/projects",
+  "/approvals",
+  "/hours",
+  "/materials",
+];
 
 export const isManagerPath = (path: string) =>
   managerPaths.includes(path) || path.startsWith("/projects/");
+
+export const isSuperAdmin = (data: AuthSession | null) =>
+  !!data?.user?.groups?.includes("super_admin");
+
+export const isUsersPath = (path: string) => path === "/users";

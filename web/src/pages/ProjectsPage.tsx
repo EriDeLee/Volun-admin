@@ -25,7 +25,20 @@ export default function ProjectsPage({
   logoutPending,
   parentError,
   onSessionIssue,
-}: WorkspaceProps) {
+  section,
+}: WorkspaceProps & { section?: "hours" | "materials" }) {
+  const title =
+    section === "hours"
+      ? "时长管理"
+      : section === "materials"
+        ? "项目材料"
+        : "项目台账";
+  const openProject = (id: string) =>
+    onNavigate(
+      section
+        ? `/${section}?project=${encodeURIComponent(id)}`
+        : `/projects/${id}`,
+    );
   const [data, setData] = useState<ProjectList | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -45,6 +58,10 @@ export default function ProjectsPage({
   const lock = useRef(false);
   const mounted = useRef(false);
   const requestID = useRef(0);
+  const canCreate = session.user.groups.some((g) =>
+    ["super_admin", "activity_admin"].includes(g),
+  );
+  const isData = session.user.groups.includes("data_admin");
   const isSuper = session.user.groups?.includes("super_admin");
 
   const load = async () => {
@@ -200,8 +217,8 @@ export default function ProjectsPage({
   return (
     <WorkspaceShell
       session={session}
-      route="/projects"
-      crumb="项目台账"
+      route={section ? `/${section}` : "/projects"}
+      crumb={title}
       onNavigate={onNavigate}
       logout={logout}
       logoutPending={logoutPending}
@@ -209,7 +226,16 @@ export default function ProjectsPage({
     >
       <div className="page-heading">
         <div>
-          <h1>项目台账</h1>
+          <h1>{title}</h1>
+          {section && (
+            <p>
+              选择项目后
+              {section === "hours"
+                ? "登记、补录或查看服务时长"
+                : "编辑、生成或下载附件1材料"}
+              。
+            </p>
+          )}
           <p>从立项到归档，在一个地方管理志愿服务全流程。</p>
         </div>
         <div className="activity-actions">
@@ -217,7 +243,11 @@ export default function ProjectsPage({
             <Icon name="download" />
             导出所选
           </button>
-          <button className="button primary" onClick={() => setCreating(true)}>
+          <button
+            className="button primary"
+            disabled={!canCreate}
+            onClick={() => setCreating(true)}
+          >
             <Icon name="plus" />
             新建项目
           </button>
@@ -241,7 +271,11 @@ export default function ProjectsPage({
                 "全部项目",
                 data.summary.project_count,
                 "项",
-                isSuper ? "当前权限：全部项目" : "当前权限：本人创建",
+                isSuper
+                  ? "当前权限：全部项目"
+                  : isData
+                    ? "当前权限：已提交项目"
+                    : "当前权限：本人创建",
                 "folder",
               ],
               [
@@ -430,7 +464,7 @@ export default function ProjectsPage({
                       <td>
                         <button
                           className="activity-project-name"
-                          onClick={() => onNavigate(`/projects/${p.id}`)}
+                          onClick={() => openProject(p.id)}
                         >
                           {p.name}
                         </button>
@@ -454,12 +488,24 @@ export default function ProjectsPage({
                       </td>
                       <td>
                         <Badge status={p.status} />
+                        <small>
+                          {
+                            (
+                              {
+                                draft: "立项草稿",
+                                pending: "待立项审核",
+                                approved: "立项通过",
+                                returned: "立项退回",
+                              } as Record<string, string>
+                            )[p.approval || ""]
+                          }
+                        </small>
                       </td>
                       <td>
                         <div className="table-actions">
                           <button
                             className="activity-text-button"
-                            onClick={() => onNavigate(`/projects/${p.id}`)}
+                            onClick={() => openProject(p.id)}
                           >
                             详情
                           </button>
@@ -469,7 +515,7 @@ export default function ProjectsPage({
                               onNavigate(`/projects/${p.id}?tab=recruit`)
                             }
                           >
-                            招募
+                            成员
                           </button>
                           <button
                             className="activity-text-button"
@@ -537,6 +583,7 @@ export default function ProjectsPage({
             {!data?.summary?.project_count && (
               <button
                 className="button primary"
+                disabled={!canCreate}
                 onClick={() => setCreating(true)}
               >
                 <Icon name="plus" />
@@ -548,7 +595,7 @@ export default function ProjectsPage({
       </section>
       <footer className="activity-footer">
         <span>北京航空航天大学 · 志愿服务项目管理平台</span>
-        <span>项目台账 · 真实数据</span>
+        <span>{title} · 真实数据</span>
       </footer>
       {creating && (
         <Modal

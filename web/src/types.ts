@@ -23,6 +23,7 @@ export interface Project {
   description: string;
   status: string;
   owner_name: string;
+  approval?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -62,6 +63,29 @@ export interface ProjectList {
   departments: string[];
   scope: string;
 }
+export interface AdminUser {
+  username: string;
+  name: string;
+  id: string;
+  groups: string[];
+  status: "active" | "disabled" | string;
+  password_setup_required: boolean;
+  has_password: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+export interface AdminUserList {
+  items: AdminUser[];
+  total: number;
+  page: number;
+  page_size: number;
+  summary: {
+    user_count: number;
+    active_count: number;
+    disabled_count: number;
+    manager_count: number;
+  };
+}
 export interface ApiError extends Error {
   status?: number;
   code?: number;
@@ -76,7 +100,9 @@ export type ApiPath =
   | "/activity/dashboard"
   | "/activity/projects"
   | `/activity/projects?${string}`
-  | `/activity/projects/${string}`;
+  | `/activity/projects/${string}`
+  | `/admin/users?${string}`
+  | `/admin/users/${string}`;
 export type ApiResult<P extends ApiPath> =
   P extends `/auth/${"me" | "login" | "setup-password"}`
     ? AuthSession
@@ -86,7 +112,11 @@ export type ApiResult<P extends ApiPath> =
         ? Dashboard
         : P extends `/activity/projects?${string}`
           ? ProjectList
-          : Project;
+          : P extends `/admin/users?${string}`
+            ? AdminUserList
+            : P extends `/admin/users/${string}`
+              ? AdminUser
+              : Project;
 export type Api = <P extends ApiPath>(
   path: P,
   options?: RequestInit,

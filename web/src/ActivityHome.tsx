@@ -1,3 +1,4 @@
+import Sidebar from "./components/Sidebar.tsx";
 import { asApiError } from "./lib/api.ts";
 import type {
   ActivityHomeProps,
@@ -120,7 +121,6 @@ export default function ActivityHome({
   session,
   api,
   Icon,
-  Brand,
   onNavigate,
   onSessionIssue,
   logout,
@@ -148,6 +148,10 @@ export default function ActivityHome({
     mounted = useRef(false),
     requestID = useRef(0);
   const name = session.user.name || session.user.username || "平台用户";
+  const canCreate = session.user.groups.some((g) =>
+    ["super_admin", "activity_admin"].includes(g),
+  );
+  const isData = session.user.groups.includes("data_admin");
   const isSuper = session.user.groups?.includes("super_admin");
   const refresh = async () => {
     const id = ++requestID.current;
@@ -280,89 +284,19 @@ export default function ActivityHome({
   ];
   return (
     <div className="activity-shell">
-      <aside className={`sidebar activity-sidebar ${menu ? "is-open" : ""}`}>
-        <Brand />
-        <div className="organization">北京航空航天大学</div>
-        <p className="nav-caption">工作空间</p>
-        <a className="nav-item active" href="/activity" aria-current="page">
-          <ActivityIcon name="grid" />
-          工作台
-        </a>
-        <button
-          className="nav-item activity-nav-button"
-          onClick={() => {
-            setMenu(false);
-            focusSection(recentRef);
-          }}
-        >
-          <ActivityIcon name="folder" />
-          近期项目
-          {data && (
-            <span className="nav-count">{data.recent_projects.length}</span>
-          )}
-        </button>
-        {(
-          [
-            ["/projects", "项目台账", "folder"],
-            ["/hours", "时长管理", "clock"],
-            ["/materials", "项目材料", "file"],
-            ["/signup", "公开问卷", "people"],
-          ] as const
-        ).map(([path, label, icon]) => (
-          <a
-            key={path}
-            className="nav-item"
-            href={path}
-            onClick={(e) => {
-              e.preventDefault();
-              onNavigate(path);
-            }}
-          >
-            <ActivityIcon name={icon} />
-            {label}
-          </a>
-        ))}
-        <p className="nav-caption activity-personal-caption">个人空间</p>
-        <a
-          className="nav-item"
-          href="/profile"
-          onClick={(e) => {
-            e.preventDefault();
-            onNavigate("/profile");
-          }}
-        >
-          <Icon name="user" />
-          个人信息
-        </a>
-        <div className="sidebar-note">
-          <Icon name="heart" />
-          <strong>让每一份服务都有记录</strong>
-          <p>
-            从项目立项到时长归档，
-            <br />
-            让每一步协作更有条理。
-          </p>
-        </div>
-        <div className="sidebar-user">
-          <span className="avatar">{name.slice(0, 1)}</span>
-          <div>
-            <strong>{name}</strong>
-            <small>{isSuper ? "超管" : "活动管理员"}</small>
-          </div>
-        </div>
-      </aside>
-      {menu && (
-        <button
-          className="activity-menu-overlay"
-          aria-label="收起导航"
-          onClick={() => setMenu(false)}
-        />
-      )}
+      <Sidebar
+        session={session}
+        route="/activity"
+        onNavigate={onNavigate}
+        open={menu}
+        onClose={() => setMenu(false)}
+      />
       <div className="profile-main">
         <header className="topbar activity-topbar">
           <button
             className="activity-icon-button activity-mobile-menu"
             aria-label="展开导航"
+            aria-expanded={menu}
             onClick={() => setMenu(!menu)}
           >
             <ActivityIcon name="menu" />
@@ -407,7 +341,11 @@ export default function ActivityHome({
                 <Icon name="refresh" />
                 {loading ? "正在刷新…" : "刷新数据"}
               </button>
-              <button className="button primary" onClick={startCreate}>
+              <button
+                className="button primary"
+                disabled={!canCreate}
+                onClick={startCreate}
+              >
                 <ActivityIcon name="plus" />
                 新建项目
               </button>
@@ -680,6 +618,7 @@ export default function ActivityHome({
                           {!data.recent_projects.length && (
                             <button
                               className="button primary"
+                              disabled={!canCreate}
                               onClick={startCreate}
                             >
                               <ActivityIcon name="plus" />
@@ -691,7 +630,9 @@ export default function ActivityHome({
                       <div className="activity-table-footer">
                         {isSuper
                           ? "当前范围：全部项目"
-                          : "当前范围：本人创建的项目"}{" "}
+                          : isData
+                            ? "当前范围：已提交项目"
+                            : "当前范围：本人创建的项目"}{" "}
                         · 新建项目状态为立项
                       </div>
                     </section>
@@ -744,7 +685,7 @@ export default function ActivityHome({
                       <div className="activity-reminder">
                         <h3>最终认定由数据管理员处理</h3>
                         <p>
-                          活动管理员提交材料与记录，不能自行通过或驳回时长认定。
+                          活动管理员负责基础信息、立项和现场出勤；数据管理员负责审核、招募、时长与材料。
                         </p>
                       </div>
                     </section>
@@ -869,7 +810,7 @@ export default function ActivityHome({
             ))}
           </dl>
           <p className="activity-detail-note">
-            当前支持基础立项与进度查看。招募、时长及材料操作将在对应模块接入后开放。
+            项目详情提供立项审批、成员招募、现场出勤、时长补录及附件1。
           </p>
           <div className="activity-modal-actions">
             <button className="button primary" onClick={() => setDetail(null)}>

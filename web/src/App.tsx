@@ -1,15 +1,17 @@
+import Sidebar from "./components/Sidebar.tsx";
 import type { AuthSession, ApiError } from "./types.ts";
 import { asApiError } from "./lib/api.ts";
 import React, { useEffect, useRef, useState } from "react";
 import "./style.css";
 import ActivityHome from "./ActivityHome.tsx";
 import ProjectsPage from "./pages/ProjectsPage.tsx";
-import ProjectDetail from "./pages/ProjectDetail.tsx";
-import HoursPage from "./pages/HoursPage.tsx";
-import MaterialsPage from "./pages/MaterialsPage.tsx";
+import ApprovalsPage from "./pages/ApprovalsPage.tsx";
+import ProjectDetail from "./pages/WorkflowPage.tsx";
+import ParticipantPage from "./pages/ParticipantPage.tsx";
 import SignupPage from "./pages/SignupPage.tsx";
+import UsersPage from "./pages/UsersPage.tsx";
 import { DraftProvider } from "./lib/drafts.tsx";
-import { isManagerPath } from "./lib/constants.ts";
+import { isManagerPath, isSuperAdmin } from "./lib/constants.ts";
 import "./workspace.css";
 import Icon from "./components/Icon.tsx";
 import { Brand } from "./components/WorkspaceShell.tsx";
@@ -18,7 +20,7 @@ import { useDraftStore } from "./lib/drafts.tsx";
 
 const canManage = (data: AuthSession | null) =>
   data?.user?.groups?.some((g) =>
-    ["super_admin", "activity_admin"].includes(g),
+    ["super_admin", "activity_admin", "data_admin"].includes(g),
   );
 const homePath = (data: AuthSession) =>
   canManage(data) ? "/activity" : "/profile";
@@ -43,6 +45,7 @@ export default function App() {
 }
 function Application() {
   const { reset: resetDrafts } = useDraftStore();
+  const [menu, setMenu] = useState(false);
   const [session, setSession] = useState<AuthSession | null>(null),
     [checking, setChecking] = useState(true),
     [startupError, setStartupError] = useState("");
@@ -105,7 +108,9 @@ function Application() {
             ? "/profile"
             : canManage(data) && isManagerPath(location.pathname)
               ? location.pathname + location.search
-              : homePath(data),
+              : isSuperAdmin(data) && location.pathname === "/users"
+                ? "/users"
+                : homePath(data),
       );
       if (!initial) setNotice("个人信息已更新。");
     } catch (cause) {
@@ -211,7 +216,11 @@ function Application() {
       setUpdated(new Date());
       setNewPassword("");
       setConfirmPassword("");
-      setPath(homePath(data));
+      const participantReturn = sessionStorage.getItem("participant_return");
+      if (participantReturn?.startsWith("/signup?")) {
+        sessionStorage.removeItem("participant_return");
+        setPath(participantReturn);
+      } else setPath(homePath(data));
     } catch (cause) {
       const e = asApiError(cause);
       setError(
@@ -245,8 +254,15 @@ function Application() {
     parentError: error,
     onSessionIssue,
   };
-  if (pathname === "/signup")
+  if (pathname === "/signup") {
+    const params = new URLSearchParams(routeSearch);
+    if (
+      params.get("project") &&
+      (params.has("form") || params.has("attendance") || !params.has("preview"))
+    )
+      return <ParticipantPage />;
     return <SignupPage {...workspaceProps} search={routeSearch} />;
+  }
   if (session?.password_setup_required)
     return (
       <main className="setup-page">
@@ -486,9 +502,19 @@ function Application() {
         </section>
       </main>
     );
-  if (pathname !== "/profile" && canManage(session)) {
+  if (
+    pathname !== "/profile" &&
+    (canManage(session) || (pathname === "/users" && isSuperAdmin(session)))
+  ) {
     const managerProps = { ...workspaceProps, session };
+    if (pathname === "/users" && isSuperAdmin(session))
+      return <UsersPage {...managerProps} />;
     if (pathname === "/projects") return <ProjectsPage {...managerProps} />;
+    if (
+      pathname === "/approvals" &&
+      session.user.groups.some((g) => ["super_admin", "data_admin"].includes(g))
+    )
+      return <ApprovalsPage {...managerProps} />;
     const detailMatch = pathname.match(/^\/projects\/([^/]+)$/);
     if (detailMatch)
       return (
@@ -500,20 +526,18 @@ function Application() {
         />
       );
     const selectedID = new URLSearchParams(routeSearch).get("project");
-    if (pathname === "/hours")
-      return (
-        <HoursPage
-          key={selectedID || "hours"}
+    if (pathname === "/hours" || pathname === "/materials")
+      return selectedID ? (
+        <ProjectDetail
+          key={pathname + selectedID}
           {...managerProps}
           id={selectedID}
+          initialTab={pathname === "/hours" ? "hours" : "materials"}
         />
-      );
-    if (pathname === "/materials")
-      return (
-        <MaterialsPage
-          key={selectedID || "materials"}
+      ) : (
+        <ProjectsPage
           {...managerProps}
-          id={selectedID}
+          section={pathname === "/hours" ? "hours" : "materials"}
         />
       );
     return (
@@ -535,50 +559,24 @@ function Application() {
       session: "已通过会话验证",
     }[session.auth_method || "session"] || "已通过会话验证";
   return (
-    <div className="profile-shell">
-      <aside className="sidebar">
-        <Brand />
-        <div className="organization">北京航空航天大学</div>
-        {canManage(session) && (
-          <a
-            className="nav-item"
-            href="/activity"
-            onClick={(e) => {
-              e.preventDefault();
-              navigate("/activity");
-            }}
-          >
-            <Icon name="heart" />
-            活动工作台
-          </a>
-        )}
-        <p className="nav-caption">个人空间</p>
-        <a className="nav-item active" href="/profile" aria-current="page">
-          <Icon name="user" />
-          个人信息
-        </a>
-        <div className="sidebar-note">
-          <Icon name="heart" />
-          <strong>让每一份服务都有记录</strong>
-          <p>
-            用热心参与，用行动连接。
-            <br />
-            从这里认识你的志愿服务身份。
-          </p>
-        </div>
-        <div className="sidebar-user">
-          <span className="avatar">{name.slice(0, 1)}</span>
-          <div>
-            <strong>{name}</strong>
-            <small>
-              {groups.map((g) => groupNames[g] || "其他用户组").join("、") ||
-                "暂未分配用户组"}
-            </small>
-          </div>
-        </div>
-      </aside>
+    <div className="profile-shell activity-shell">
+      <Sidebar
+        session={session}
+        route="/profile"
+        onNavigate={navigate}
+        open={menu}
+        onClose={() => setMenu(false)}
+      />
       <div className="profile-main">
-        <header className="topbar">
+        <header className="topbar activity-topbar">
+          <button
+            className="activity-icon-button activity-mobile-menu"
+            aria-label="展开导航"
+            aria-expanded={menu}
+            onClick={() => setMenu(!menu)}
+          >
+            <Icon name="menu" />
+          </button>
           <span>
             个人空间 <b>/</b> <strong>个人信息</strong>
           </span>

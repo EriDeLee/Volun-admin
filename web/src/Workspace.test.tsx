@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   cleanup,
-  fireEvent,
   render,
   screen,
   waitFor,
@@ -40,6 +39,41 @@ const summary = {
   pending_count: 1,
   recognized_hours: null,
 };
+const workflow = {
+  project,
+  version: 3,
+  approval: "approved",
+  capabilities: [
+    "read",
+    "members.read",
+    "basics.edit",
+    "attendance.manage",
+    "materials.read",
+  ],
+  state: {
+    basics: {
+      ...project,
+      sessions: [
+        {
+          id: "s1",
+          name: "第一场",
+          start: "2026-11-08T08:00:00+08:00",
+          end: "2026-11-08T12:00:00+08:00",
+          positions: [{ id: "pos1", name: "引导", capacity: 10 }],
+        },
+      ],
+    },
+    applications: [],
+    members: [],
+    windows: [],
+    attendance: [],
+    hours: [],
+    form: {},
+    intent_form: {},
+    review: {},
+    material: { guarantees: [] },
+  },
+};
 const reply = (data: unknown, status = 200) => ({
   ok: status === 200,
   status,
@@ -48,6 +82,9 @@ const reply = (data: unknown, status = 200) => ({
 function server() {
   return vi.fn(async (url, options = {}) => {
     const u = new URL(url, "http://localhost");
+    if (u.pathname.endsWith("/projects/p1/workflow")) return reply(workflow);
+    if (u.pathname.endsWith("/projects/p1/history"))
+      return reply({ events: [], materials: [] });
     if (u.pathname.endsWith("/auth/me")) return reply(session);
     if (u.pathname.endsWith("/auth/logout")) return reply({});
     if (u.pathname.endsWith("/projects/p1")) return reply(project);
@@ -65,6 +102,31 @@ function server() {
         page: Number(u.searchParams.get("page") || 1),
         page_size: 20,
         departments: [project.department],
+      });
+    }
+    if (u.pathname.startsWith("/api/v1/admin/users")) {
+      const adminUser = {
+        username: "manager",
+        name: "测试负责人",
+        id: "00123",
+        groups: ["super_admin"],
+        status: "active",
+        password_setup_required: false,
+        has_password: true,
+        updated_at: "2026-11-09T08:00:00Z",
+      };
+      if (options.method === "PATCH") return reply(adminUser);
+      return reply({
+        items: [adminUser],
+        total: 1,
+        page: 1,
+        page_size: 20,
+        summary: {
+          user_count: 1,
+          active_count: 1,
+          disabled_count: 0,
+          manager_count: 1,
+        },
       });
     }
     if (u.pathname.endsWith("/dashboard"))
@@ -101,18 +163,161 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+test("data administrator can open the approval queue directly and inspect a pending change", async () => {
+  history.replaceState(null, "", "/approvals");
+  fetch.mockImplementation(async (url) => {
+    const u = new URL(url, "http://localhost");
+    if (u.pathname.endsWith("/auth/me"))
+      return reply({
+        ...session,
+        user: { ...session.user, groups: ["data_admin"] },
+      });
+    if (u.pathname.endsWith("/approvals"))
+      return reply({
+        items: [
+          {
+            project,
+            application: {
+              id: "app1",
+              kind: "change",
+              basics: workflow.state.basics,
+              applicant: "申请人",
+              reason: "变更地点",
+              created_at: "2026-11-09T08:00:00Z",
+            },
+          },
+        ],
+        total: 1,
+        page_size: 20,
+      });
+    if (u.pathname.endsWith("/workflow")) return reply(workflow);
+    if (u.pathname.endsWith("/history"))
+      return reply({ events: [], materials: [] });
+    throw new Error(`unexpected route: ${url}`);
+  });
+  render(<App />);
+  await screen.findByRole("heading", { name: "项目审批" });
+  expect(await screen.findByText(/变更地点/)).toBeTruthy();
+  await userEvent.click(screen.getByRole("link", { name: "查看并审批" }));
+  await screen.findByText("立项与变更记录");
+  expect(location.pathname).toBe("/projects/p1");
+});
+
+test("super admin manages user groups and status without exposing sub", async () => {
+  history.replaceState(null, "", "/users");
+  fetch.mockImplementation(async (url, options = {}) => {
+    const u = new URL(url, "http://localhost");
+    if (u.pathname.endsWith("/auth/me"))
+      return reply({
+        ...session,
+        user: { ...session.user, username: "manager", groups: ["super_admin"] },
+      });
+    return server()(url, options);
+  });
+  const user = userEvent.setup();
+  render(<App />);
+  await screen.findByRole("heading", { name: "成员管理" });
+  expect(await screen.findByText("测试负责人")).toBeTruthy();
+  expect(document.body.textContent).not.toContain("private-user-sub");
+  await user.click(await screen.findByRole("button", { name: "编辑" }));
+  const dialog = screen.getByRole("dialog");
+  await user.click(
+    within(dialog).getByRole("checkbox", { name: /数据管理员/ }),
+  );
+  await user.click(within(dialog).getByRole("button", { name: "保存变更" }));
+  await screen.findByText("已更新账号 manager。");
+  const patch = fetch.mock.calls.find(
+    ([, options]) => options?.method === "PATCH",
+  );
+  expect(patch).toBeTruthy();
+  expect(JSON.parse(patch![1]?.body as string).groups).toContain("data_admin");
+});
+
+test("super administrator can reach member management from the dashboard and retains navigation on profile", async () => {
+  const original = server();
+  fetch.mockImplementation(async (url, options = {}) =>
+    url.endsWith("/auth/me")
+      ? reply({
+          ...session,
+          user: { ...session.user, groups: ["super_admin"] },
+        })
+      : original(url, options),
+  );
+  history.replaceState(null, "", "/activity");
+  render(<App />);
+  await screen.findByRole("heading", { name: "活动管理工作台" });
+  const nav = () => screen.getByRole("navigation", { name: "页面导航" });
+  const labels = within(nav())
+    .getAllByRole("link")
+    .map((link) => link.textContent);
+  expect(within(nav()).getByRole("link", { name: "时长管理" })).toBeTruthy();
+  expect(within(nav()).getByRole("link", { name: "项目材料" })).toBeTruthy();
+  await userEvent.click(within(nav()).getByRole("link", { name: "成员管理" }));
+  await screen.findByRole("heading", { name: "成员管理" });
+  expect(location.pathname).toBe("/users");
+  await userEvent.click(within(nav()).getByRole("link", { name: "个人信息" }));
+  await screen.findByRole("heading", { name: "个人信息" });
+  expect(
+    within(nav())
+      .getAllByRole("link")
+      .map((link) => link.textContent),
+  ).toEqual(labels);
+  expect(
+    within(nav())
+      .getByRole("link", { name: "个人信息" })
+      .getAttribute("aria-current"),
+  ).toBe("page");
+});
+
 test("restores deep project route and does not reveal internal subject", async () => {
   history.replaceState(null, "", "/projects/p1?tab=recruit");
   render(<App />);
-  await screen.findByRole("heading", { name: "志愿者名单" });
+  await screen.findByRole("heading", { name: "成员名单" });
   expect(location.pathname + location.search).toBe("/projects/p1?tab=recruit");
   expect(document.body.textContent).not.toContain(session.user.sub);
   await userEvent.click(
     screen.getByRole<HTMLButtonElement>("tab", { name: "录入与审核" }),
   );
-  expect(await screen.findByText("暂无可读取的复核快照")).toBeTruthy();
+  expect(
+    await screen.findByText(
+      "后续统计、录入、时长认定及最终审核由数据管理员处理。",
+    ),
+  ).toBeTruthy();
   expect(screen.queryByRole("button", { name: "通过" })).toBeNull();
 });
+
+test.each([
+  ["hours", "时长管理", "计时与时长"],
+  ["materials", "项目材料", "附件1"],
+])(
+  "%s keeps its navigation active when choosing a project",
+  async (path, title, heading) => {
+    const original = server();
+    fetch.mockImplementation(async (url, options = {}) =>
+      url.endsWith("/auth/me")
+        ? reply({
+            ...session,
+            user: { ...session.user, groups: ["super_admin"] },
+          })
+        : original(url, options),
+    );
+    history.replaceState(null, "", `/${path}`);
+    render(<App />);
+    await screen.findByRole("heading", { name: title });
+    const activeLink = () =>
+      within(screen.getByRole("navigation", { name: "页面导航" })).getByRole(
+        "link",
+        { name: title },
+      );
+    expect(activeLink().getAttribute("aria-current")).toBe("page");
+    await userEvent.click(
+      await screen.findByRole("button", { name: project.name }),
+    );
+    await screen.findByRole("heading", { name: heading });
+    expect(location.pathname + location.search).toBe(`/${path}?project=p1`);
+    expect(activeLink().getAttribute("aria-current")).toBe("page");
+  },
+);
 
 test("ledger search and reset fetch the full paginated list", async () => {
   const user = userEvent.setup();
@@ -187,149 +392,53 @@ test("public form needs no authentication and clearly completes only a local pre
   ).toBe("0007");
 });
 
-test("recruit drafts flow into integer hours and logout clears drafts", async () => {
-  const user = userEvent.setup();
-  history.replaceState(null, "", "/projects/p1");
+test("activity administrator can view members but cannot recruit or maintain hours", async () => {
+  history.replaceState(null, "", "/projects/p1?tab=recruit");
   render(<App />);
-  await screen.findByRole("button", { name: "添加场次草稿" });
-  await user.click(
-    screen.getByRole<HTMLButtonElement>("button", { name: "添加场次草稿" }),
-  );
-  let dialog = screen.getByRole<HTMLButtonElement>("dialog");
-  await user.type(
-    within(dialog).getByLabelText<HTMLInputElement>("场次名称 *"),
-    "第一场",
-  );
-  await user.type(
-    within(dialog).getByLabelText<HTMLInputElement>("岗位安排 *"),
-    "现场引导",
-  );
-  fireEvent.change(
-    within(dialog).getByLabelText<HTMLInputElement>("开始时间 *"),
-    {
-      target: { value: "2026-11-08T08:00" },
-    },
-  );
-  fireEvent.change(
-    within(dialog).getByLabelText<HTMLInputElement>("结束时间 *"),
-    {
-      target: { value: "2026-11-08T12:00" },
-    },
-  );
-  await user.type(
-    within(dialog).getByLabelText<HTMLInputElement>("计划人数 *"),
-    "10",
-  );
-  await user.click(
-    within(dialog).getByRole<HTMLButtonElement>("button", {
-      name: "添加场次草稿",
-    }),
-  );
-  await user.click(
-    screen.getByRole<HTMLButtonElement>("tab", { name: "招募登记" }),
-  );
-  await user.click(
-    screen.getByRole<HTMLButtonElement>("button", { name: "添加志愿者" }),
-  );
-  dialog = screen.getByRole<HTMLButtonElement>("dialog");
-  await user.type(
-    within(dialog).getByLabelText<HTMLInputElement>("姓名 *"),
-    "草稿同学",
-  );
-  await user.type(
-    within(dialog).getByLabelText<HTMLInputElement>("学号 / 人员编号 *"),
-    "001234",
-  );
-  await user.type(
-    within(dialog).getByLabelText<HTMLInputElement>("学院 / 部门 *"),
-    "测试学院",
-  );
-  await user.type(
-    within(dialog).getByLabelText<HTMLInputElement>("服务岗位 *"),
-    "现场引导",
-  );
-  await user.selectOptions(
-    within(dialog).getByLabelText<HTMLInputElement>("参与场次"),
-    within(dialog).getByRole<HTMLButtonElement>("option", { name: "第一场" })
-      .value,
-  );
-  await user.click(
-    within(dialog).getByRole<HTMLButtonElement>("button", {
-      name: "添加到草稿",
-    }),
-  );
-  expect(await screen.findByText("001234")).toBeTruthy();
-  await user.click(
-    screen.getByRole<HTMLButtonElement>("tab", { name: "计时与时长" }),
-  );
-  const input = await screen.findByLabelText("草稿同学的拟计时长");
-  fireEvent.change(input, { target: { value: "1.5" } });
-  await user.click(
-    screen.getByRole<HTMLButtonElement>("button", { name: "保留会话草稿" }),
-  );
-  expect(await screen.findByRole("alert")).toBeTruthy();
-  fireEvent.change(input, { target: { value: "5" } });
-  await user.click(
-    screen.getByRole<HTMLButtonElement>("button", { name: "保留会话草稿" }),
-  );
-  expect(input.getAttribute("aria-invalid")).toBe("true");
-  fireEvent.change(input, { target: { value: "4" } });
-  await user.click(
-    screen.getByRole<HTMLButtonElement>("button", { name: "保留会话草稿" }),
-  );
-  await screen.findByText(/时长草稿已保留在本次会话中/);
+  await screen.findByRole("heading", { name: "成员名单" });
+  expect(screen.queryByRole("button", { name: "保存成员" })).toBeNull();
+  expect(screen.queryByRole("tab", { name: "问卷与二维码" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "时长管理" })).toBeNull();
+  await userEvent.click(screen.getByRole("tab", { name: "现场出勤" }));
   expect(
-    screen.getByRole<HTMLButtonElement>("button", {
-      name: "提交数据复核（待开放）",
-    }).disabled,
-  ).toBe(true);
+    screen.getByRole("button", { name: "保存窗口并更新二维码" }),
+  ).toBeTruthy();
+  await userEvent.click(screen.getByRole("tab", { name: "计时与时长" }));
   expect(
-    fetch.mock.calls.filter(([, opts]) => opts?.method === "POST"),
-  ).toHaveLength(0);
-  await user.click(
-    screen.getByRole<HTMLButtonElement>("button", { name: "退出登录" }),
-  );
-  await screen.findByRole("button", { name: "登录平台" });
-  await user.type(screen.getByLabelText<HTMLInputElement>("账号"), "manager");
-  await user.type(
-    screen.getByLabelText<HTMLInputElement>("密码", { exact: true }),
-    "test-password",
-  );
-  fetch.mockImplementationOnce(async () => reply(session));
-  await user.click(
-    screen.getByRole<HTMLButtonElement>("button", { name: "登录平台" }),
-  );
-  await screen.findByRole("heading", { name: "活动管理工作台" });
-  await user.click(
-    screen.getByRole<HTMLButtonElement>("button", { name: project.name }),
-  );
-  await screen.findByRole("button", { name: "添加场次草稿" });
-  expect(screen.queryByText("第一场")).toBeNull();
-  expect(localStorage.length).toBe(0);
-  expect(sessionStorage.length).toBe(0);
+    screen.queryByRole("button", { name: "保存时长 / 批量补录" }),
+  ).toBeNull();
 });
 
-test("batch preflight rejects duplicate numbers before writing drafts", async () => {
-  history.replaceState(null, "", "/projects/p1?tab=recruit");
-  const user = userEvent.setup();
+test("data administrator persists questionnaire changes with the current workflow version", async () => {
+  const original = server();
+  fetch.mockImplementation(async (url, options = {}) => {
+    if (url.endsWith("/auth/me"))
+      return reply({
+        ...session,
+        user: { ...session.user, groups: ["data_admin"] },
+      });
+    if (url.endsWith("/workflow"))
+      return reply({
+        ...workflow,
+        capabilities: [...workflow.capabilities, "forms.write"],
+      });
+    if (url.endsWith("/forms"))
+      return reply({
+        ...workflow,
+        version: 4,
+        capabilities: [...workflow.capabilities, "forms.write"],
+      });
+    return original(url, options);
+  });
+  history.replaceState(null, "", "/projects/p1?tab=forms");
   render(<App />);
-  await user.click(await screen.findByRole("button", { name: "批量粘贴" }));
-  fireEvent.change(screen.getByLabelText<HTMLInputElement>("批量名单"), {
-    target: { value: "甲\t001\t学院\t引导\n乙\t001\t学院\t接待" },
-  });
-  expect(screen.getByText("编号重复，请核对")).toBeTruthy();
-  expect(
-    screen.getByRole<HTMLButtonElement>("button", { name: "录入本次会话草稿" })
-      .disabled,
-  ).toBe(true);
-  fireEvent.change(screen.getByLabelText<HTMLInputElement>("批量名单"), {
-    target: { value: "甲\t001\t学院\t引导\n乙\t002\t学院\t接待" },
-  });
-  await user.click(
-    screen.getByRole<HTMLButtonElement>("button", { name: "录入本次会话草稿" }),
-  );
-  expect(await screen.findByText("001")).toBeTruthy();
-  expect(screen.getByText("002")).toBeTruthy();
+  await screen.findByRole("heading", { name: "问卷与二维码" });
+  await userEvent.click(screen.getByRole("button", { name: "保存问卷" }));
+  await screen.findByText("已保存到服务器。");
+  const call = fetch.mock.calls.find(([url]) => url.endsWith("/forms"));
+  expect(call?.[1]?.method).toBe("PUT");
+  expect(new Headers(call?.[1]?.headers).get("X-Workflow-Version")).toBe("3");
+  expect(JSON.parse(call?.[1]?.body as string).kind).toBe("recruit");
 });
 
 test("material export escapes editable HTML and spreadsheet export neutralizes formulas", () => {
