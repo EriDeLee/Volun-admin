@@ -80,6 +80,20 @@ func TestProjectWorkflowAndAttendance(t *testing.T) {
 	result = call("GET", "/workflow", nil, data)
 	_ = json.Unmarshal(result["state"], &state)
 	member := state.Members[0]
+	payload, _ := json.Marshal(map[string]any{"status": "进行", "reason": "准备完成"})
+	req := httptest.NewRequest("POST", base+"/transition", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	req.Header.Set("X-Workflow-Version", strconv.Itoa(version))
+	req.AddCookie(&http.Cookie{Name: "volun_session", Value: data})
+	w := httptest.NewRecorder()
+	f.router.ServeHTTP(w, req)
+	if w.Code != 400 {
+		t.Fatalf("preparation accepted without attachment1: %d %s", w.Code, w.Body.String())
+	}
+	call("PUT", "/material", activity.Material{Team: "志愿队", Audience: "青少年", Description: "服务内容<&>", ContactName: "负责人", ContactMobile: "13800000000", Guarantees: []string{"提供饮水"}}, data)
+	call("POST", "/material/generate", map[string]any{}, data)
+	call("POST", "/transition", map[string]any{"status": "进行", "reason": "已确认成员名单和附件1"}, data)
 	call("PUT", "/windows", activity.Window{SessionID: "s1", Action: "checkin", Mode: "manual", Open: true}, owner)
 	call("POST", "/sessions/s1/attendance", map[string]any{"member_id": member.ID, "action": "checkin", "reason": "", "correction": false}, owner)
 	call("POST", "/sessions/s1/attendance", map[string]any{"member_id": member.ID, "action": "checkin", "reason": "", "correction": false}, owner)
@@ -88,8 +102,6 @@ func TestProjectWorkflowAndAttendance(t *testing.T) {
 	if len(state.Attendance) != 1 || len(state.Hours) != 0 {
 		t.Fatalf("attendance repeated or generated hours: %+v", state)
 	}
-	call("PUT", "/material", activity.Material{Team: "志愿队", Audience: "青少年", Description: "服务内容<&>", ContactName: "负责人", ContactMobile: "13800000000", Guarantees: []string{"提供饮水"}}, data)
-	call("POST", "/material/generate", map[string]any{}, data)
 	var files []model.MaterialVersion
 	if err := f.db.Find(&files).Error; err != nil || len(files) != 1 || len(files[0].Data) < 1000 {
 		t.Fatalf("material missing: %v %+v", err, files)
@@ -224,6 +236,9 @@ func TestPublicIdentityPermissionsAndReview(t *testing.T) {
 	call("GET", public+"/me?number=001", nil, formal, nil, 403)
 	call("GET", public+"/me", nil, "", cookie, 200)
 	call("POST", public+"/forms/form/responses", registration, "", nil, 200)
+	call("PUT", base+"/material", activity.Material{Team: "测试队", Audience: "学生", Description: "测试服务", ContactName: "负责人", ContactMobile: "13800000000"}, data, nil, 200)
+	call("POST", base+"/material/generate", map[string]any{}, data, nil, 200)
+	call("POST", base+"/transition", map[string]any{"status": "进行", "reason": "已确认成员名单和附件1"}, data, nil, 200)
 	call("PUT", base+"/windows", activity.Window{SessionID: "s", Action: "checkin", Mode: "manual", Open: true}, owner, nil, 200)
 	readState := func() activity.State {
 		var row model.Workflow
@@ -253,8 +268,8 @@ func TestPublicIdentityPermissionsAndReview(t *testing.T) {
 	call("PUT", base+"/hours", map[string]any{"rows": []map[string]any{{"member_id": result.Member.ID, "hours": 0, "source": "登记"}}}, data, nil, 200)
 	call("POST", base+"/members/access", map[string]any{"member_id": result.Member.ID, "revoke": true, "reason": "本人凭证丢失"}, data, nil, 200)
 	call("GET", public+"/me", nil, "", cookie, 403)
-	call("POST", public+"/forms/form/responses", registration, "", nil, 403)
-	for _, stage := range []string{"招募", "进行", "结项", "意向", "统计", "数据", "录入", "审核", "通过"} {
+	call("POST", public+"/forms/form/responses", registration, "", nil, 409)
+	for _, stage := range []string{"结项", "意向", "统计", "数据", "录入", "审核", "通过"} {
 		call("POST", base+"/transition", map[string]any{"status": stage, "reason": "业务处理完成", "external_result": "学校录入回执"}, data, nil, 200)
 	}
 	current = readState()

@@ -1142,6 +1142,7 @@ paths:
       tags:
       - Workflow
       summary: 数据管理员批量登记整数小时、补录及更正
+      description: 立项已通过、已确认准备完成，且最早开始的首个场次已结束时才开放。结束时刻即开放；未满足条件返回409及errcode 300003。
       security:
       - sessionCookie: []
       parameters:
@@ -1198,6 +1199,7 @@ paths:
       tags:
       - Workflow
       summary: 数据管理员流转业务状态及审核
+      description: 筹备或招募可确认进入进行；需有有效场次岗位、至少一名成员和已生成的附件1记录。确认开放现场出勤，公开招募停止接受新报名。其他状态流转保留原规则；前端附件3目前仅作占位。
       security:
       - sessionCookie: []
       parameters:

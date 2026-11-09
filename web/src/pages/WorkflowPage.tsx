@@ -11,6 +11,7 @@ import {
   localTime,
   sessionRangeError,
   memberAssignments,
+  workflowAvailability,
 } from "../lib/workflow.ts";
 import type {
   Workflow,
@@ -91,9 +92,8 @@ export default function WorkflowPage(
   );
   const [member, setMember] = useState<Member>(emptyMember),
     [paste, setPaste] = useState("");
-  const [reason, setReason] = useState(""),
-    [stage, setStage] = useState("招募"),
-    [external, setExternal] = useState("");
+  const [reason, setReason] = useState("");
+  const [now, setNow] = useState(Date.now);
   const [hourValues, setHourValues] = useState<Record<string, string>>({}),
     [source, setSource] = useState("登记");
   const [window, setWindow] = useState<AttendanceWindow>({
@@ -121,6 +121,7 @@ export default function WorkflowPage(
   const [qr, setQR] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const mutationLock = useRef(false);
+  const navigation = useRef<HTMLElement>(null);
   const [copying, setCopying] = useState(false);
   const handle = (e: unknown) => {
     const failure = e as Error & { status?: number; code?: number };
@@ -152,6 +153,11 @@ export default function WorkflowPage(
   useEffect(() => {
     void load();
   }, [id]);
+  useEffect(() => {
+    navigation.current
+      ?.querySelector('[aria-selected="true"]')
+      ?.scrollIntoView?.({ block: "nearest", inline: "center" });
+  }, [tab, data?.approval]);
   const can = (capability: string) => !!data?.capabilities.includes(capability);
   const mutate = async (path: string, body: unknown, method = "POST") => {
     if (mutationLock.current || busy || !data) return;
@@ -241,6 +247,37 @@ export default function WorkflowPage(
   };
   const sessions = data?.state.basics.sessions || [];
   const members = data?.state.members || [];
+  const availability = data ? workflowAvailability(data, now) : null;
+  const firstEnd = availability?.firstEnd;
+  const refreshProgress = async () => {
+    try {
+      setData(await request<Workflow>(`${base}/workflow`));
+    } catch (e) {
+      handle(e);
+    }
+  };
+  useEffect(() => {
+    if (!firstEnd || !Number.isFinite(firstEnd) || firstEnd <= Date.now())
+      return;
+    const timer = globalThis.setTimeout(
+      () => {
+        setNow(Date.now());
+        void refreshProgress();
+      },
+      Math.min(firstEnd - Date.now() + 50, 2_147_483_647),
+    );
+    return () => globalThis.clearTimeout(timer);
+  }, [id, firstEnd, now]);
+  useEffect(() => {
+    const refresh = () => {
+      const next = Date.now();
+      setNow(next);
+      if (firstEnd && now < firstEnd && next >= firstEnd)
+        void refreshProgress();
+    };
+    globalThis.addEventListener("focus", refresh);
+    return () => globalThis.removeEventListener("focus", refresh);
+  }, [id, firstEnd, now]);
   const editSession = (index: number, key: string, value: unknown) =>
     setBasics((b) =>
       b
@@ -252,16 +289,36 @@ export default function WorkflowPage(
           }
         : b,
     );
+  const approvalLock = availability?.approved ? "" : "立项审核通过后开放";
+  const attendanceLock =
+    approvalLock ||
+    (availability?.attendance ? "" : "确认成员名单与附件1后开放");
+  const hoursLock =
+    attendanceLock ||
+    (availability?.hours
+      ? ""
+      : availability?.first
+        ? `首场“${availability.first.name}”结束后开放（${new Date(availability.firstEnd).toLocaleString("zh-CN")}）`
+        : "设置首场起止时间后开放");
   const tabs = [
-    ["overview", "基础信息与立项"],
-    ["recruit", "成员名单"],
-    ["attendance", "现场出勤"],
-    ["forms", "问卷与二维码"],
-    ["hours", "计时与时长"],
-    ["materials", "附件1"],
-    ["review", "录入与审核"],
-    ["history", "操作记录"],
-  ].filter(([key]) => key !== "forms" || can("forms.write"));
+    { key: "overview", label: "立项", locked: "" },
+    { key: "forms", label: "招募问卷与二维码", locked: approvalLock },
+    { key: "recruit", label: "成员名单", locked: approvalLock },
+    { key: "materials", label: "附件1", locked: approvalLock },
+    { key: "attendance", label: "现场出勤", locked: attendanceLock },
+    { key: "hours", label: "计时与时长", locked: hoursLock },
+    { key: "review", label: "附件3", locked: "" },
+    { key: "history", label: "操作记录", locked: "" },
+  ].filter(({ key }) => key !== "forms" || can("forms.write"));
+  const activeStep = tabs.find((step) => step.key === tab);
+  const locked =
+    activeStep?.locked ||
+    (tab === "forms" && !can("forms.write")
+      ? "问卷发布由数据管理员负责。"
+      : "");
+  const hasMaterial = history.materials.length > 0;
+  const canConfirmPreparation =
+    members.length > 0 && sessions.length > 0 && hasMaterial;
   const nameOfSession = (sessionID: string) =>
     sessions.find((s) => s.id === sessionID)?.name || sessionID;
   const nameOfPosition = (m: Member) =>
@@ -400,12 +457,15 @@ export default function WorkflowPage(
             {notice}
           </p>
         )}
-        <nav className="workflow-tabs" aria-label="项目功能">
-          {tabs.map(([key, label]) => (
+        <nav className="workflow-tabs" aria-label="项目功能" ref={navigation}>
+          {tabs.map(({ key, label, locked }) => (
             <button
               key={key}
               role="tab"
               aria-selected={tab === key}
+              aria-label={label}
+              disabled={!!locked || !data}
+              title={locked || undefined}
               className={tab === key ? "active" : ""}
               onClick={() => {
                 setTab(key);
@@ -413,14 +473,78 @@ export default function WorkflowPage(
               }}
             >
               {label}
+              {locked && <small>待开放</small>}
             </button>
           ))}
         </nav>
         {data && (
           <>
-            <p className="workflow-note">
-              活动管理员负责项目与现场执行；数据管理员负责立项审核、招募、时长和材料。操作均记录历史。
-            </p>
+            {availability?.attendance &&
+              !availability.hours &&
+              !locked &&
+              tab !== "review" &&
+              tab !== "history" && (
+                <p className="workflow-note">现场出勤已开放；{hoursLock}。</p>
+              )}
+            {locked && (
+              <section className="panel workflow-panel workflow-locked">
+                <h2>{activeStep?.label || "当前功能"}尚未开放</h2>
+                <p>{locked}</p>
+                <button
+                  className="button secondary"
+                  onClick={() =>
+                    setTab(availability?.approved ? "materials" : "overview")
+                  }
+                >
+                  {availability?.approved ? "查看准备进度" : "查看立项"}
+                </button>
+              </section>
+            )}
+            {availability?.approved &&
+              !availability.attendance &&
+              !locked &&
+              tab !== "history" &&
+              tab !== "review" && (
+                <section
+                  className="workflow-preparation"
+                  aria-label="活动准备进度"
+                >
+                  <div>
+                    <h2>准备完成后开放现场出勤</h2>
+                    <p>
+                      确认成员名单、场次与岗位，并生成附件1，再进入现场执行。
+                    </p>
+                    <ul>
+                      <li>
+                        {members.length
+                          ? `已登记 ${members.length} 名成员`
+                          : "待录入成员名单"}
+                      </li>
+                      <li>{hasMaterial ? "附件1已生成" : "待生成附件1"}</li>
+                    </ul>
+                  </div>
+                  {can("workflow.write") ? (
+                    <button
+                      className="button primary"
+                      disabled={busy || !canConfirmPreparation}
+                      onClick={() =>
+                        void mutate("/transition", {
+                          status: "进行",
+                          reason:
+                            "已确认成员名单、场次岗位及附件1，准备进入现场出勤。",
+                          external_result: "",
+                        }).then((ok) => {
+                          if (ok) setTab("attendance");
+                        })
+                      }
+                    >
+                      确认准备完成，开放现场出勤
+                    </button>
+                  ) : (
+                    <p>由数据管理员确认准备完成。</p>
+                  )}
+                </section>
+              )}
             {tab === "overview" && basics && (
               <section className="panel workflow-panel">
                 <h2>项目基础信息</h2>
@@ -777,7 +901,7 @@ export default function WorkflowPage(
                 )}
               </section>
             )}
-            {tab === "recruit" && (
+            {tab === "recruit" && !locked && (
               <section className="panel workflow-panel">
                 <h2>成员名单</h2>
                 <p>共 {members.length} 人；报名与现场出勤、时长分别记录。</p>
@@ -1081,7 +1205,7 @@ export default function WorkflowPage(
                 )}
               </section>
             )}
-            {tab === "attendance" && (
+            {tab === "attendance" && !locked && (
               <section className="panel workflow-panel">
                 <h2>现场出勤</h2>
                 <p>
@@ -1294,7 +1418,7 @@ export default function WorkflowPage(
                 </div>
               </section>
             )}
-            {tab === "forms" && can("forms.write") && (
+            {tab === "forms" && can("forms.write") && !locked && (
               <section className="panel workflow-panel">
                 <h2>问卷与二维码</h2>
                 <p className="workflow-note">
@@ -1421,7 +1545,7 @@ export default function WorkflowPage(
                 )}
               </section>
             )}
-            {tab === "hours" && (
+            {tab === "hours" && !locked && (
               <section className="panel workflow-panel">
                 <h2>计时与时长</h2>
                 {!can("hours.write") ? (
@@ -1620,7 +1744,7 @@ export default function WorkflowPage(
                 )}
               </section>
             )}
-            {tab === "materials" && material && (
+            {tab === "materials" && material && !locked && (
               <section className="panel workflow-panel">
                 <h2>附件1</h2>
                 {can("materials.write") ? (
@@ -1720,77 +1844,11 @@ export default function WorkflowPage(
               </section>
             )}
             {tab === "review" && (
-              <section className="panel workflow-panel">
-                <h2>录入与审核</h2>
-                <p>当前阶段：{data.project.status}</p>
-                <p>审核意见：{data.state.review.opinion || "暂无"}</p>
-                {data.state.review.published && (
-                  <p>
-                    已公布认定结果 ·{" "}
-                    {data.state.review.approved_at &&
-                      new Date(data.state.review.approved_at).toLocaleString()}
-                  </p>
-                )}
-                {can("workflow.write") ? (
-                  <form
-                    className="workflow-form"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      void mutate("/transition", {
-                        status: stage,
-                        reason,
-                        external_result: external,
-                      });
-                    }}
-                  >
-                    <label>
-                      目标阶段
-                      <select
-                        value={stage}
-                        onChange={(e) => setStage(e.target.value)}
-                      >
-                        {[
-                          "筹备",
-                          "招募",
-                          "进行",
-                          "结项",
-                          "意向",
-                          "统计",
-                          "数据",
-                          "录入",
-                          "审核",
-                          "通过",
-                          "驳回",
-                        ].map((v) => (
-                          <option key={v}>{v}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      处理依据 / 审核意见
-                      <textarea
-                        required
-                        value={reason}
-                        onChange={(e) => setReason(e.target.value)}
-                      />
-                    </label>
-                    <label>
-                      外部录入结果与凭据说明
-                      <textarea
-                        value={external}
-                        onChange={(e) => setExternal(e.target.value)}
-                      />
-                    </label>
-                    <p>
-                      按标准顺序流转；审核可退回统计、数据或录入，已通过或驳回项目可更正重开到统计或数据。
-                    </p>
-                    <button className="button primary" disabled={busy}>
-                      确认流程处理
-                    </button>
-                  </form>
-                ) : (
-                  <p>后续统计、录入、时长认定及最终审核由数据管理员处理。</p>
-                )}
+              <section className="panel workflow-panel attachment-placeholder">
+                <Icon name="file" />
+                <h2>附件3</h2>
+                <p>功能待完善</p>
+                <p>后续在此补充附件3的生成与相关处理机制。</p>
               </section>
             )}
             {tab === "history" && (

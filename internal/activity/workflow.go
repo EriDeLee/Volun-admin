@@ -54,7 +54,7 @@ func (s *Service) workflowState(c *gin.Context, write bool) {
 			state.Review = Review{}
 		}
 	}
-	errhandler.OK(c, map[string]any{"project": projectJSON(p), "version": row.Version, "approval": p.Approval, "state": state, "capabilities": capabilities(actor(c), p)})
+	errhandler.OK(c, map[string]any{"project": projectJSON(p), "version": row.Version, "approval": p.Approval, "state": state, "capabilities": capabilities(actor(c), p, state)})
 }
 
 func (s *Service) mutate(c *gin.Context, action string, operation func(*gorm.DB, *model.Project, model.Workflow, *State, model.User) (string, error)) {

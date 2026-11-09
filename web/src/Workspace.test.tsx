@@ -40,7 +40,7 @@ const summary = {
   recognized_hours: null,
 };
 const workflow = {
-  project,
+  project: { ...project, status: "进行" },
   version: 3,
   approval: "approved",
   capabilities: [
@@ -276,13 +276,9 @@ test("restores deep project route and does not reveal internal subject", async (
   expect(location.pathname + location.search).toBe("/projects/p1?tab=recruit");
   expect(document.body.textContent).not.toContain(session.user.sub);
   await userEvent.click(
-    screen.getByRole<HTMLButtonElement>("tab", { name: "录入与审核" }),
+    screen.getByRole<HTMLButtonElement>("tab", { name: "附件3" }),
   );
-  expect(
-    await screen.findByText(
-      "后续统计、录入、时长认定及最终审核由数据管理员处理。",
-    ),
-  ).toBeTruthy();
+  expect(await screen.findByText("功能待完善")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "通过" })).toBeNull();
 });
 
@@ -397,7 +393,7 @@ test("activity administrator can view members but cannot recruit or maintain hou
   render(<App />);
   await screen.findByRole("heading", { name: "成员名单" });
   expect(screen.queryByRole("button", { name: "保存成员" })).toBeNull();
-  expect(screen.queryByRole("tab", { name: "问卷与二维码" })).toBeNull();
+  expect(screen.queryByRole("tab", { name: "招募问卷与二维码" })).toBeNull();
   expect(screen.queryByRole("link", { name: "时长管理" })).toBeNull();
   await userEvent.click(screen.getByRole("tab", { name: "现场出勤" }));
   expect(

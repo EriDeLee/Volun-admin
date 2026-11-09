@@ -86,6 +86,78 @@ const props = {
   onSessionIssue: vi.fn(),
 } as ComponentProps<typeof WorkflowPage>;
 
+test("navigation follows the activity sequence and attachment3 is a placeholder", async () => {
+  vi.mocked(request).mockImplementation(async (path) =>
+    path.endsWith("/history")
+      ? ({ events: [], materials: [] } as never)
+      : (initial() as never),
+  );
+  render(<WorkflowPage {...props} initialTab="review" />);
+  await screen.findByRole("heading", { name: "附件3" });
+  expect(
+    screen.getAllByRole("tab").map((tab) => tab.getAttribute("aria-label")),
+  ).toEqual([
+    "立项",
+    "招募问卷与二维码",
+    "成员名单",
+    "附件1",
+    "现场出勤",
+    "计时与时长",
+    "附件3",
+    "操作记录",
+  ]);
+  expect(
+    screen.getByRole("tab", { name: "现场出勤" }).hasAttribute("disabled"),
+  ).toBe(true);
+  expect(
+    screen.getByRole("tab", { name: "计时与时长" }).hasAttribute("disabled"),
+  ).toBe(true);
+  expect(screen.getByText("功能待完善")).toBeTruthy();
+  expect(screen.queryByRole("combobox", { name: "目标阶段" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "确认流程处理" })).toBeNull();
+});
+
+test("direct hours links show a reason before the first session ends", async () => {
+  const data = initial();
+  data.project.status = "进行";
+  data.state.basics.sessions = sessions.map((s) => ({
+    ...s,
+    start: "2999-11-09T08:00:00+08:00",
+    end: "2999-11-09T12:00:00+08:00",
+  }));
+  vi.mocked(request).mockImplementation(async (path) =>
+    path.endsWith("/history")
+      ? ({ events: [], materials: [] } as never)
+      : (data as never),
+  );
+  render(<WorkflowPage {...props} initialTab="hours" />);
+  await screen.findByRole("heading", { name: "计时与时长尚未开放" });
+  expect(screen.getByText(/首场“上午”结束后开放/)).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "保存时长 / 批量补录" }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("tab", { name: "现场出勤" }).hasAttribute("disabled"),
+  ).toBe(false);
+});
+
+test("preparation confirmation requires both a roster and generated attachment1", async () => {
+  const data = initial();
+  data.capabilities.push("workflow.write");
+  vi.mocked(request).mockImplementation(async (path) =>
+    path.endsWith("/history")
+      ? ({ events: [], materials: [] } as never)
+      : (data as never),
+  );
+  render(<WorkflowPage {...props} />);
+  const button = await screen.findByRole("button", {
+    name: "确认准备完成，开放现场出勤",
+  });
+  expect(button.hasAttribute("disabled")).toBe(true);
+  expect(screen.getByText("待录入成员名单")).toBeTruthy();
+  expect(screen.getByText("待生成附件1")).toBeTruthy();
+});
+
 test.each([false, true])(
   "publishing uses latest version and recovers one unrelated conflict: %s",
   async (race) => {

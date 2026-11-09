@@ -36,7 +36,7 @@ func (s *Service) manageWindow(c *gin.Context) {
 		return
 	}
 	s.mutate(c, "attendance.window", func(tx *gorm.DB, p *model.Project, row model.Workflow, state *State, u model.User) (string, error) {
-		if p.Approval != "approved" || p.Status == "通过" || p.Status == "审核" || p.Status == "驳回" {
+		if !preparationConfirmed(*p) || p.Status == "通过" || p.Status == "审核" || p.Status == "驳回" {
 			return "", errConflict
 		}
 		if !sessionExists(state.Basics, req.SessionID) || req.Action != "checkin" && req.Action != "checkout" || req.Mode != "manual" && req.Mode != "scheduled" {
@@ -103,7 +103,7 @@ func (s *Service) staffAttendance(c *gin.Context) {
 		return
 	}
 	s.mutate(c, "attendance.staff", func(tx *gorm.DB, p *model.Project, row model.Workflow, state *State, u model.User) (string, error) {
-		if p.Approval != "approved" || p.Status == "通过" || p.Status == "审核" || p.Status == "驳回" {
+		if !preparationConfirmed(*p) || p.Status == "通过" || p.Status == "审核" || p.Status == "驳回" {
 			return "", errConflict
 		}
 		var member Member
@@ -138,6 +138,10 @@ func (s *Service) scanContext(c *gin.Context) {
 	p, _, state, err := s.publicContext(c)
 	if err != nil {
 		failWorkflow(c, err)
+		return
+	}
+	if !preparationConfirmed(p) || p.Status == "通过" || p.Status == "审核" || p.Status == "驳回" {
+		failWorkflow(c, errClosed)
 		return
 	}
 	var w Window
@@ -177,7 +181,7 @@ func (s *Service) scanAttendance(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		if p.Status == "审核" || p.Status == "通过" || p.Status == "驳回" {
+		if !preparationConfirmed(p) || p.Status == "审核" || p.Status == "通过" || p.Status == "驳回" {
 			return errClosed
 		}
 		index, err := identifyMember(tx, c, p, &state)

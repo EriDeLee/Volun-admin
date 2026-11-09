@@ -13,7 +13,7 @@ import (
 	"volun-data/internal/model"
 )
 
-func capabilities(u model.User, p model.Project) []string {
+func capabilities(u model.User, p model.Project, state State) []string {
 	result := []string{"read", "members.read"}
 	staff := hasGroup(u, "activity_admin") && p.CreatedBy == u.Sub || hasGroup(u, "super_admin")
 	if staff || dataManager(u) {
@@ -31,9 +31,14 @@ func capabilities(u model.User, p model.Project) []string {
 			result = append(result, "workflow.write", "export")
 		}
 		if p.Status != "审核" && p.Status != "通过" && p.Status != "驳回" {
-			result = append(result, "attendance.manage")
+			if preparationConfirmed(p) {
+				result = append(result, "attendance.manage")
+			}
 			if dataManager(u) {
-				result = append(result, "members.write", "forms.write", "hours.write", "materials.write")
+				result = append(result, "members.write", "forms.write", "materials.write")
+				if hoursAvailable(p, state.Basics, time.Now()) {
+					result = append(result, "hours.write")
+				}
 			}
 		}
 	}
@@ -184,6 +189,9 @@ func (s *Service) saveHours(c *gin.Context) {
 		if err := dataEditable(p, u); err != nil {
 			return "", err
 		}
+		if !hoursAvailable(*p, state.Basics, time.Now()) {
+			return "", errHoursNotReady
+		}
 		seen := map[string]bool{}
 		for _, h := range req.Rows {
 			if h.Hours == nil || *h.Hours < 0 || *h.Hours > 100000 || seen[h.MemberID] || h.Recognized != nil {
@@ -258,8 +266,21 @@ func (s *Service) transition(c *gin.Context) {
 		}
 		reopen := (p.Status == "通过" || p.Status == "驳回") && (req.Status == "统计" || req.Status == "数据")
 		back := p.Status == "审核" && (req.Status == "统计" || req.Status == "数据" || req.Status == "录入")
-		if !reopen && !back && !(target == current+1 && current < 10) && !(p.Status == "审核" && req.Status == "驳回") {
+		confirmPreparation := (p.Status == "筹备" || p.Status == "招募") && req.Status == "进行"
+		if !reopen && !back && !confirmPreparation && !(target == current+1 && current < 10) && !(p.Status == "审核" && req.Status == "驳回") {
 			return "", errInvalid
+		}
+		if confirmPreparation {
+			if len(state.Members) == 0 || !basicsValid(state.Basics) {
+				return "", errInvalid
+			}
+			var generated int64
+			if err := tx.Model(&model.MaterialVersion{}).Where("project_id=?", p.ID).Count(&generated).Error; err != nil {
+				return "", err
+			}
+			if generated == 0 {
+				return "", errInvalid
+			}
 		}
 		if req.Status == "统计" || req.Status == "审核" || req.Status == "通过" {
 			for _, m := range state.Members {

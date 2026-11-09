@@ -159,6 +159,37 @@ export interface History {
   }[];
 }
 
+export function workflowAvailability(data: Workflow, now = Date.now()) {
+  const approved = data.approval === "approved";
+  const attendance =
+    approved &&
+    [
+      "进行",
+      "结项",
+      "意向",
+      "统计",
+      "数据",
+      "录入",
+      "审核",
+      "通过",
+      "驳回",
+    ].includes(data.project.status);
+  let first: ServiceSession | undefined;
+  for (const session of data.state.basics.sessions) {
+    const start = Date.parse(session.start),
+      end = Date.parse(session.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+      first = undefined;
+      break;
+    }
+    if (!first || Date.parse(session.start) < Date.parse(first.start))
+      first = session;
+  }
+  const firstEnd = first ? Date.parse(first.end) : NaN;
+  const hours = attendance && Number.isFinite(firstEnd) && now >= firstEnd;
+  return { approved, attendance, hours, first, firstEnd };
+}
+
 export async function request<T>(
   path: string,
   body?: unknown,

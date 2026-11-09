@@ -23,9 +23,9 @@ func TestRecruitmentMultipleAssignments(t *testing.T) {
 	if err := f.db.Model(&model.Project{}).Where("id=?", p.ID).Updates(map[string]any{"approval": "approved", "status": "招募"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	state := activity.State{Basics: activity.Basics{Sessions: []activity.Session{
-		{ID: "s1", Name: "上午", Positions: []activity.Position{{ID: "p1", Name: "引导", Capacity: 10}}},
-		{ID: "s2", Name: "下午", Positions: []activity.Position{{ID: "p2", Name: "服务", Capacity: 1}}},
+	state := activity.State{Basics: activity.Basics{Name: p.Name, Department: p.Department, StartsOn: p.StartsOn, EndsOn: p.EndsOn, Location: p.Location, Sessions: []activity.Session{
+		{ID: "s1", Name: "上午", Start: "2026-11-08T08:00:00+08:00", End: "2026-11-08T12:00:00+08:00", Positions: []activity.Position{{ID: "p1", Name: "引导", Capacity: 10}}},
+		{ID: "s2", Name: "下午", Start: "2026-11-08T13:00:00+08:00", End: "2026-11-08T17:00:00+08:00", Positions: []activity.Position{{ID: "p2", Name: "服务", Capacity: 1}}},
 	}}, Form: activity.Form{ID: "form", Published: true}}
 	raw, _ := json.Marshal(state)
 	if err := f.db.Create(&model.Workflow{ProjectID: p.ID, Version: 1, State: string(raw)}).Error; err != nil {
@@ -92,6 +92,9 @@ func TestRecruitmentMultipleAssignments(t *testing.T) {
 	if state.Members[0].Notes != "更新备注" {
 		t.Fatal("notes not saved")
 	}
+	call("PUT", base+"/material", activity.Material{Team: "测试队", Audience: "学生", Description: "测试服务", ContactName: "负责人", ContactMobile: "13800000000"}, data, nil, 200)
+	call("POST", base+"/material/generate", map[string]any{}, data, nil, 200)
+	call("POST", base+"/transition", map[string]any{"status": "进行", "reason": "已确认成员名单和附件1"}, data, nil, 200)
 	call("PUT", base+"/windows", activity.Window{SessionID: "s2", Action: "checkin", Mode: "manual", Open: true}, owner, nil, 200)
 	memberID := state.Members[0].ID
 	call("POST", base+"/sessions/s2/attendance", map[string]any{"member_id": memberID, "action": "checkin"}, owner, nil, 200)
