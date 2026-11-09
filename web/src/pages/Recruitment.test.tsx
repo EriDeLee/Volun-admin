@@ -369,7 +369,12 @@ test.each([false, true])(
     history.replaceState(null, "", "/signup?project=p&form=f");
     let loggedIn = !passwordLogin;
     const authenticated = {
-      user: { name: "账号姓名", id: "001234", phone: "13800000001", groups: ["formal_user"] },
+      user: {
+        name: "账号姓名",
+        id: "001234",
+        phone: "13800000001",
+        groups: ["formal_user"],
+      },
     };
     vi.mocked(request).mockImplementation(async (path) => {
       if (path === "/auth/login") {
@@ -409,7 +414,9 @@ test.each([false, true])(
     });
     expect(name.value).toBe("账号姓名");
     expect(name.readOnly).toBe(true);
-    expect(screen.getByRole<HTMLInputElement>("textbox", { name: "联系电话" }).value).toBe("13800000001");
+    expect(
+      screen.getByRole<HTMLInputElement>("textbox", { name: "联系电话" }).value,
+    ).toBe("13800000001");
     expect(
       screen.getByRole<HTMLInputElement>("textbox", { name: "学号" }).value,
     ).toBe("001234");
@@ -419,6 +426,43 @@ test.each([false, true])(
     );
   },
 );
+
+test("an account without a phone binds it before registration", async () => {
+  history.replaceState(null, "", "/signup?project=p&form=f");
+  const phone = "130" + "0".repeat(7) + "1";
+  const account = {
+    name: "账号姓名",
+    id: "001234",
+    phone: "",
+    groups: ["formal_user"],
+  };
+  vi.mocked(request).mockImplementation(async (path) => {
+    if (path === "/auth/me") return { user: account } as never;
+    if (path === "/auth/phone") return { user: { ...account, phone } } as never;
+    if (path.endsWith("/forms/f"))
+      return {
+        project: "测试项目",
+        kind: "recruit",
+        form: initial().state.form,
+        sessions,
+      } as never;
+    throw new Error("未报名");
+  });
+  render(<ParticipantPage />);
+  await screen.findByRole("heading", { name: "绑定报名手机号" });
+  expect(screen.queryByRole("button", { name: "提交报名" })).toBeNull();
+  await userEvent.type(screen.getByLabelText("绑定手机号"), phone);
+  await userEvent.click(screen.getByRole("button", { name: "绑定手机号" }));
+  const input = await screen.findByRole<HTMLInputElement>("textbox", {
+    name: "联系电话",
+  });
+  expect(input.value).toBe(phone);
+  expect(input.readOnly).toBe(true);
+  expect(
+    screen.getByRole<HTMLInputElement>("textbox", { name: "姓名" }).value,
+  ).toBe(account.name);
+  expect(screen.queryByRole("heading", { name: "绑定报名手机号" })).toBeNull();
+});
 
 test("identity review excludes account registrations", async () => {
   const data = initial();

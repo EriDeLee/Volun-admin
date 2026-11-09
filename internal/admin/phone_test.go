@@ -60,7 +60,7 @@ func TestUniquePhoneAcrossAccountOperations(t *testing.T) {
 	if !created.Valid || created.Imported != 1 {
 		t.Fatal("phone account creation failed")
 	}
-	csv := "??,??,??,????,???,???\nnew1,?,0004,synthetic-password,formal_user," + phoneC + "\nnew2,?,0005,synthetic-password,formal_user," + phoneB + "\n"
+	csv := "账号,姓名,学号,初始密码,用户组,手机号\nnew1,测试,0004,synthetic-password,formal_user," + phoneC + "\nnew2,测试,0005,synthetic-password,formal_user," + phoneB + "\n"
 	payload, _ = json.Marshal(map[string]any{"csv": csv, "commit": true})
 	result := decode[struct {
 		Valid    bool

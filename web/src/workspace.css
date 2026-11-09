@@ -1631,9 +1631,11 @@ button:disabled {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
-.material-option-grid label {
+.workflow-panel .material-option-grid label {
   display: flex;
+  flex-direction: row;
   align-items: center;
+  gap: 10px;
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 8px;

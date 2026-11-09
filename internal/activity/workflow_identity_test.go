@@ -20,7 +20,8 @@ func TestRecruitmentIdentity(t *testing.T) {
 	owner := f.identity(t, "activity_admin", false)
 	manager := f.identity(t, "data_admin", false)
 	account := f.identity(t, "formal_user", false)
-	if err := f.db.Model(&model.User{}).Where("username=?", "formal_user").Updates(map[string]any{"id": "001234", "name": "账号姓名"}).Error; err != nil {
+	phone := "130" + strings.Repeat("0", 7) + "1"
+	if err := f.db.Model(&model.User{}).Where("username=?", "formal_user").Updates(map[string]any{"id": "001234", "name": "账号姓名", "phone": phone}).Error; err != nil {
 		t.Fatal(err)
 	}
 	p := decode[dto.ProjectResponse](t, f.request("POST", "/api/v1/activity/projects", validProject, owner, true))
@@ -67,7 +68,7 @@ func TestRecruitmentIdentity(t *testing.T) {
 		t.Fatalf("client forged verified identity: %+v", manual)
 	}
 	verified := decode[struct{ Member activity.Member }](t, call("POST", public+"/forms/f/responses", map[string]any{"key": "synthetic-account-key", "member": member}, account, 200)).Member
-	if !verified.IdentityVerified || verified.IdentitySource != "account" || verified.Name != "账号姓名" || verified.Number != "001234" {
+	if !verified.IdentityVerified || verified.IdentitySource != "account" || verified.Name != "账号姓名" || verified.Number != "001234" || verified.Phone != phone {
 		t.Fatalf("account identity not authoritative: %+v", verified)
 	}
 	call("GET", public+"/me", nil, account, 200)

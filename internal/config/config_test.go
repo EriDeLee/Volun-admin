@@ -36,6 +36,17 @@ func TestDotEnvAndEnvironmentPrecedence(t *testing.T) {
 	}
 }
 
+func TestAttachmentDefaultsFromEnvironment(t *testing.T) {
+	values := map[string]string{"ATTACHMENT1_TEAM": "配置团队", "ATTACHMENT1_CONTACT_NAME": "配置联系人", "ATTACHMENT1_CONTACT_EMAIL": "test@example.test", "ATTACHMENT1_NOTES": "补充", "ATTACHMENT1_TRAINING": "培训"}
+	cfg, err := load(func(key string) string { return values[key] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Attachment1.Team != values["ATTACHMENT1_TEAM"] || cfg.Attachment1.ContactName != values["ATTACHMENT1_CONTACT_NAME"] || cfg.Attachment1.ContactEmail != values["ATTACHMENT1_CONTACT_EMAIL"] || cfg.Attachment1.Notes != "补充" || cfg.Attachment1.Training != "培训" {
+		t.Fatal("attachment defaults not loaded")
+	}
+}
+
 func TestLoad(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
