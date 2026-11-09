@@ -57,7 +57,7 @@ func run(log *slog.Logger) error {
 		return errors.New("database pool unavailable")
 	}
 	defer pool.Close()
-	authService := &auth.Service{DB: db, Config: cfg.Auth, HTTP: &http.Client{Timeout: 10 * time.Second}}
+	authService := &auth.Service{DB: db, Config: cfg.Auth, MaterialDefaults: cfg.Attachment1, HTTP: &http.Client{Timeout: 10 * time.Second}}
 	log.Info("SSO configuration", "client_id_configured", cfg.Auth.SSOClientID != "", "client_secret_configured", cfg.Auth.SSOClientSecret != "")
 	if err := migration.Run(db, migrations.All()); err != nil {
 		return fmt.Errorf("authentication migration: %w", err)

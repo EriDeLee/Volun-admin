@@ -21,6 +21,7 @@ const (
 	CSRFValidationFailed  Code = 200008
 	PasswordSetupRequired Code = 200009
 	PasswordSetupConflict Code = 200010
+	PhoneAlreadyBound     Code = 200011
 	InternalError         Code = 900001
 	DatabaseUnavailable   Code = 900002
 )
@@ -55,6 +56,8 @@ func (code Code) details() (int, string) {
 		return http.StatusForbidden, "请先设置登录密码"
 	case PasswordSetupConflict:
 		return http.StatusConflict, "登录密码已设置，请重新登录"
+	case PhoneAlreadyBound:
+		return http.StatusConflict, "该手机号已绑定其他账号"
 	case DatabaseUnavailable:
 		return http.StatusServiceUnavailable, "数据库暂时不可用"
 	default:

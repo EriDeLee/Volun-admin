@@ -369,7 +369,7 @@ test.each([false, true])(
     history.replaceState(null, "", "/signup?project=p&form=f");
     let loggedIn = !passwordLogin;
     const authenticated = {
-      user: { name: "账号姓名", id: "001234", groups: ["formal_user"] },
+      user: { name: "账号姓名", id: "001234", phone: "13800000001", groups: ["formal_user"] },
     };
     vi.mocked(request).mockImplementation(async (path) => {
       if (path === "/auth/login") {
@@ -409,6 +409,7 @@ test.each([false, true])(
     });
     expect(name.value).toBe("账号姓名");
     expect(name.readOnly).toBe(true);
+    expect(screen.getByRole<HTMLInputElement>("textbox", { name: "联系电话" }).value).toBe("13800000001");
     expect(
       screen.getByRole<HTMLInputElement>("textbox", { name: "学号" }).value,
     ).toBe("001234");

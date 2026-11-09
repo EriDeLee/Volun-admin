@@ -70,7 +70,7 @@ export default function UserImport({
   };
   const template = () => {
     const url = URL.createObjectURL(
-      new Blob(["\ufeff账号,姓名,学号,初始密码,用户组\r\n"], {
+      new Blob(["\ufeff账号,姓名,学号,初始密码,用户组,手机号\r\n"], {
         type: "text/csv;charset=utf-8",
       }),
     );
@@ -148,7 +148,7 @@ export default function UserImport({
             value={csv}
             disabled={busy}
             onChange={(e) => change(e.target.value)}
-            placeholder="账号,姓名,学号,初始密码,用户组"
+            placeholder="账号,姓名,学号,初始密码,用户组,手机号"
           />
         </label>
         <details className="import-help">

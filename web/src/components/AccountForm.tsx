@@ -21,6 +21,7 @@ export default function AccountForm({
     username: "",
     name: "",
     id: "",
+    phone: "",
     password: "",
     groups: ["formal_user"],
   });
@@ -29,7 +30,7 @@ export default function AccountForm({
   const [error, setError] = useState("");
   const lock = useRef(false);
   const change = (
-    key: "username" | "name" | "id" | "password",
+    key: "username" | "name" | "id" | "password" | "phone",
     value: string,
   ) => setForm((prev) => ({ ...prev, [key]: value }));
   return (
@@ -136,6 +137,16 @@ export default function AccountForm({
                     autoComplete="off"
                   />
                   <small>以文本保存，保留前导零</small>
+                </label>
+                <label>
+                  绑定手机号
+                  <input
+                    type="tel"
+                    maxLength={20}
+                    value={form.phone}
+                    onChange={(event) => change("phone", event.target.value)}
+                    placeholder="可暂不填写，后续绑定"
+                  />
                 </label>
                 <label className="full">
                   登录账号

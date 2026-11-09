@@ -69,10 +69,15 @@ func NewRouter(db Pinger, log *slog.Logger, authService *auth.Service) *gin.Engi
 	authRoutes := api.Group("/auth")
 	authRoutes.POST("/login", authService.Login)
 	authRoutes.GET("/me", authService.Me)
+	authRoutes.PUT("/phone", authService.Middleware(), authService.BindPhone)
 	authRoutes.POST("/logout", authService.Logout)
 	authRoutes.POST("/setup-password", authService.SetInitialPassword)
 	authRoutes.GET("/sso/start", authService.SSOStart)
-	activityService := &activity.Service{DB: authService.DB}
+	defaults := authService.MaterialDefaults
+	activityService := &activity.Service{DB: authService.DB, MaterialDefaults: activity.Material{
+		Team: defaults.Team, ContactName: defaults.ContactName, ContactPhone: defaults.ContactPhone,
+		ContactMobile: defaults.ContactMobile, ContactEmail: defaults.ContactEmail, Notes: defaults.Notes, Training: defaults.Training,
+	}}
 	activityRoutes := api.Group("/activity", authService.Middleware(), activity.RequireManager)
 	activityRoutes.GET("/dashboard", activityService.Dashboard)
 	activityRoutes.GET("/approvals", activityService.ListApprovals)

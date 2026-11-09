@@ -146,6 +146,9 @@ func (s *Service) submitPublicForm(c *gin.Context) {
 	if u.Sub != "" {
 		req.Member.Name = u.Name
 		req.Member.Number = u.ID
+		if u.Phone != "" {
+			req.Member.Phone = u.Phone
+		}
 	}
 	var result Member
 	credential := ""

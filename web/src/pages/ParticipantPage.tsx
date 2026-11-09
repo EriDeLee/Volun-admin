@@ -7,6 +7,7 @@ import {
 } from "../lib/workflow.ts";
 import AssignmentPicker from "../components/AssignmentPicker.tsx";
 import ThemeSelect from "../components/ThemeSelect.tsx";
+import PhoneBinding from "../components/PhoneBinding.tsx";
 import type { AuthSession } from "../types.ts";
 import type {
   Member,
@@ -87,6 +88,7 @@ export default function ParticipantPage() {
         ...previous,
         name: authenticated.user.name || "",
         number: authenticated.user.id || "",
+        phone: authenticated.user.phone || previous.phone,
       }));
     } catch (cause) {
       if ((cause as { status?: number }).status !== 401) throw cause;
@@ -297,6 +299,24 @@ export default function ParticipantPage() {
             。姓名和学号已自动填入，无需人工核实身份。
           </p>
         )}
+        {form?.kind === "recruit" &&
+          !own &&
+          identity &&
+          !identity.user.phone && (
+            <article className="workflow-session">
+              <h2>绑定报名手机号</h2>
+              <p>首次报名请补充手机号，之后会自动填入。</p>
+              <PhoneBinding
+                onBound={(authenticated) => {
+                  setIdentity(authenticated);
+                  setMember((previous) => ({
+                    ...previous,
+                    phone: authenticated.user.phone || "",
+                  }));
+                }}
+              />
+            </article>
+          )}
         {!loading && !own && (!formID || form?.kind === "intent") && (
           <>
             <button className="button primary" onClick={login}>
@@ -396,7 +416,7 @@ export default function ParticipantPage() {
           </article>
         )}
         {form?.kind === "recruit" &&
-          (own || identity || entry === "manual") && (
+          (own || (identity && identity.user.phone) || entry === "manual") && (
             <form
               className="workflow-form"
               onSubmit={(e) => {
@@ -461,8 +481,10 @@ export default function ParticipantPage() {
                       field === "phone" ? 50 : field === "name" ? 80 : 120
                     }
                     readOnly={
-                      (field === "name" || field === "number") &&
-                      (!!own?.member.identity_verified || (!own && !!identity))
+                      (field === "phone" && !own && !!identity?.user.phone) ||
+                      ((field === "name" || field === "number") &&
+                        (!!own?.member.identity_verified ||
+                          (!own && !!identity)))
                     }
                     disabled={!!own && field === "number"}
                     value={member[field as keyof typeof member]}

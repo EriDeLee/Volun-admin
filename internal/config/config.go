@@ -19,6 +19,17 @@ type Config struct {
 	Database        Database
 	Auth            Auth
 	LogLevel        string
+	Attachment1     Attachment1
+}
+
+type Attachment1 struct {
+	Team          string
+	ContactName   string
+	ContactPhone  string
+	ContactMobile string
+	ContactEmail  string
+	Notes         string
+	Training      string
 }
 
 type Auth struct {
@@ -73,6 +84,15 @@ func load(getenv func(string) string) (Config, error) {
 		return fallback
 	}
 	c := Config{Env: value("APP_ENV", "dev"), HTTPAddr: value("HTTP_ADDR", ":8080")}
+	c.Attachment1 = Attachment1{
+		Team:          value("ATTACHMENT1_TEAM", ""),
+		ContactName:   value("ATTACHMENT1_CONTACT_NAME", ""),
+		ContactPhone:  value("ATTACHMENT1_CONTACT_PHONE", ""),
+		ContactMobile: value("ATTACHMENT1_CONTACT_MOBILE", ""),
+		ContactEmail:  value("ATTACHMENT1_CONTACT_EMAIL", ""),
+		Notes:         value("ATTACHMENT1_NOTES", ""),
+		Training:      value("ATTACHMENT1_TRAINING", ""),
+	}
 	c.LogLevel = value("LOG_LEVEL", "info")
 	if c.LogLevel != "debug" && c.LogLevel != "info" && c.LogLevel != "warn" && c.LogLevel != "error" {
 		return Config{}, fmt.Errorf("LOG_LEVEL must be debug, info, warn or error")

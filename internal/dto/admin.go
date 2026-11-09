@@ -6,6 +6,7 @@ type AdminUserResponse struct {
 	Username              string    `json:"username"`
 	Name                  string    `json:"name"`
 	ID                    string    `json:"id"`
+	Phone                 string    `json:"phone"`
 	Groups                []string  `json:"groups"`
 	Status                string    `json:"status"`
 	PasswordSetupRequired bool      `json:"password_setup_required"`
@@ -30,6 +31,7 @@ type AdminUserSummary struct {
 }
 
 type UpdateAdminUserRequest struct {
+	Phone  *string  `json:"phone"`
 	Status *string  `json:"status"`
 	Groups []string `json:"groups"`
 }

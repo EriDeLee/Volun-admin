@@ -88,6 +88,7 @@ func userJSON(u model.User) dto.AdminUserResponse {
 		Username:              u.Username,
 		Name:                  u.Name,
 		ID:                    u.ID,
+		Phone:                 u.Phone,
 		Groups:                parseGroups(u.Groups),
 		Status:                u.Status,
 		PasswordSetupRequired: u.PasswordSetupRequired,
@@ -196,7 +197,7 @@ func (s *Service) ListUsers(c *gin.Context) {
 		if qText != "" {
 			text := strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(qText)
 			like := "%" + text + "%"
-			filtered = filtered.Where("(username LIKE ? ESCAPE '!' OR name LIKE ? ESCAPE '!' OR id LIKE ? ESCAPE '!')", like, like, like)
+			filtered = filtered.Where("(username LIKE ? ESCAPE '!' OR name LIKE ? ESCAPE '!' OR id LIKE ? ESCAPE '!' OR phone LIKE ? ESCAPE '!')", like, like, like, like)
 		}
 		if status != "" {
 			filtered = filtered.Where("status = ?", status)
@@ -249,7 +250,7 @@ func (s *Service) UpdateUser(c *gin.Context) {
 		errhandler.Fail(c, errhandler.InvalidArgument)
 		return
 	}
-	if req.Status == nil && req.Groups == nil {
+	if req.Status == nil && req.Groups == nil && req.Phone == nil {
 		errhandler.Fail(c, errhandler.InvalidArgument)
 		return
 	}
@@ -266,6 +267,14 @@ func (s *Service) UpdateUser(c *gin.Context) {
 	}
 
 	updates := map[string]any{}
+	if req.Phone != nil {
+		phone, ok := model.NormalizePhone(*req.Phone)
+		if !ok {
+			errhandler.Fail(c, errhandler.InvalidArgument)
+			return
+		}
+		updates["phone"] = phone
+	}
 	if req.Status != nil {
 		status := strings.TrimSpace(*req.Status)
 		ok := false
@@ -313,6 +322,15 @@ func (s *Service) UpdateUser(c *gin.Context) {
 	updates["updated_at"] = time.Now().UTC()
 
 	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if phone, ok := updates["phone"].(string); ok && phone != "" {
+			var count int64
+			if err := tx.Model(&model.User{}).Where("phone=? AND sub<>?", phone, target.Sub).Count(&count).Error; err != nil {
+				return err
+			}
+			if count != 0 {
+				return gorm.ErrDuplicatedKey
+			}
+		}
 		result := tx.Model(&model.User{}).Where("username = ?", username).Updates(updates)
 		if result.Error != nil {
 			return result.Error
@@ -331,6 +349,10 @@ func (s *Service) UpdateUser(c *gin.Context) {
 		return tx.Where("username = ?", username).First(&target).Error
 	})
 	if err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			errhandler.Fail(c, errhandler.PhoneAlreadyBound)
+			return
+		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			errhandler.Fail(c, errhandler.ResourceNotFound)
 			return

@@ -24,6 +24,7 @@ type importRow struct {
 	Username string   `json:"username"`
 	Name     string   `json:"name"`
 	ID       string   `json:"id"`
+	Phone    string   `json:"phone"`
 	Groups   []string `json:"groups"`
 	Error    string   `json:"error"`
 	password string
@@ -55,6 +56,7 @@ func (s *Service) CreateUser(c *gin.Context) {
 		Username string   `json:"username"`
 		Name     string   `json:"name"`
 		ID       string   `json:"id"`
+		Phone    string   `json:"phone"`
 		Password string   `json:"password"`
 		Groups   []string `json:"groups"`
 	}
@@ -71,7 +73,7 @@ func (s *Service) CreateUser(c *gin.Context) {
 	}
 	var content strings.Builder
 	w := csv.NewWriter(&content)
-	if err := w.WriteAll([][]string{{"账号", "姓名", "学号", "初始密码", "用户组"}, {req.Username, req.Name, req.ID, req.Password, strings.Join(groups, "|")}}); err != nil {
+	if err := w.WriteAll([][]string{{"账号", "姓名", "学号", "初始密码", "用户组", "手机号"}, {req.Username, req.Name, req.ID, req.Password, strings.Join(groups, "|"), req.Phone}}); err != nil {
 		errhandler.Fail(c, errhandler.InternalError)
 		return
 	}
@@ -94,12 +96,13 @@ func (s *Service) importUsers(c *gin.Context, req importRequest) {
 	}
 	r := csv.NewReader(strings.NewReader(strings.TrimPrefix(req.CSV, "\ufeff")))
 	header, err := r.Read()
-	if err != nil || len(header) != 5 || strings.Join(header, ",") != "账号,姓名,学号,初始密码,用户组" {
+	if err != nil || (strings.Join(header, ",") != "账号,姓名,学号,初始密码,用户组" && strings.Join(header, ",") != "账号,姓名,学号,初始密码,用户组,手机号") {
 		errhandler.Fail(c, errhandler.InvalidArgument)
 		return
 	}
 	rows := []importRow{}
 	seen := map[string]bool{}
+	seenPhones := map[string]bool{}
 	for {
 		values, err := r.Read()
 		if err == io.EOF {
@@ -111,6 +114,10 @@ func (s *Service) importUsers(c *gin.Context, req importRequest) {
 		}
 		line, _ := r.FieldPos(0)
 		row := importRow{Line: line, Username: strings.TrimSpace(values[0]), Name: strings.TrimSpace(values[1]), ID: strings.TrimSpace(values[2]), password: values[3]}
+		phoneOK := true
+		if len(values) == 6 {
+			row.Phone, phoneOK = model.NormalizePhone(values[5])
+		}
 		groups := strings.FieldsFunc(values[4], func(r rune) bool { return r == '|' || r == '、' || r == ',' })
 		if strings.TrimSpace(values[4]) == "" {
 			groups = []string{"formal_user"}
@@ -128,8 +135,15 @@ func (s *Service) importUsers(c *gin.Context, req importRequest) {
 			row.Error = "用户组无效，请使用固定用户组代码，以 | 分隔"
 		case seen[row.Username]:
 			row.Error = "文件内账号重复"
+		case !phoneOK:
+			row.Error = "手机号须为11位有效手机号码"
+		case row.Phone != "" && seenPhones[row.Phone]:
+			row.Error = "文件内手机号重复"
 		}
 		seen[row.Username] = true
+		if row.Phone != "" {
+			seenPhones[row.Phone] = true
+		}
 		rows = append(rows, row)
 	}
 	if len(rows) == 0 {
@@ -158,6 +172,15 @@ func (s *Service) importUsers(c *gin.Context, req importRequest) {
 			taken[name] = true
 		}
 		for i := range rows {
+			if rows[i].Phone != "" {
+				var count int64
+				if err := tx.Model(&model.User{}).Where("phone=?", rows[i].Phone).Count(&count).Error; err != nil {
+					return err
+				}
+				if count != 0 {
+					rows[i].Error = "手机号已绑定其他账号"
+				}
+			}
 			if taken[rows[i].Username] {
 				rows[i].Error = "账号已存在，不会覆盖"
 			}
@@ -177,7 +200,7 @@ func (s *Service) importUsers(c *gin.Context, req importRequest) {
 			if _, err := rand.Read(id[:]); err != nil {
 				return err
 			}
-			u := model.User{Sub: "local:" + hex.EncodeToString(id[:]), Username: row.Username, Name: row.Name, ID: row.ID, Groups: strings.Join(row.Groups, ","), Status: "active", PasswordHash: string(hash), PasswordSetupRequired: true}
+			u := model.User{Sub: "local:" + hex.EncodeToString(id[:]), Username: row.Username, Name: row.Name, ID: row.ID, Phone: row.Phone, Groups: strings.Join(row.Groups, ","), Status: "active", PasswordHash: string(hash), PasswordSetupRequired: true}
 			if err := tx.Create(&u).Error; err != nil {
 				return err
 			}

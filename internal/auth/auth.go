@@ -25,9 +25,10 @@ import (
 const cookieName = "volun_session"
 
 type Service struct {
-	DB     *gorm.DB
-	Config config.Auth
-	HTTP   *http.Client
+	DB               *gorm.DB
+	Config           config.Auth
+	HTTP             *http.Client
+	MaterialDefaults config.Attachment1
 }
 
 func frontendURL(base, path string) string {
@@ -66,7 +67,7 @@ func userJSON(u model.User) dto.UserResponse {
 	if u.Groups != "" {
 		groups = strings.Split(u.Groups, ",")
 	}
-	return dto.UserResponse{ID: u.ID, Name: u.Name, Username: u.Username, Groups: groups}
+	return dto.UserResponse{ID: u.ID, Name: u.Name, Username: u.Username, Phone: u.Phone, Groups: groups}
 }
 
 func (s *Service) issue(c *gin.Context, u model.User) error {

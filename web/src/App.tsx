@@ -9,6 +9,7 @@ import ApprovalsPage from "./pages/ApprovalsPage.tsx";
 import ProjectDetail from "./pages/WorkflowPage.tsx";
 import ParticipantPage from "./pages/ParticipantPage.tsx";
 import SignupPage from "./pages/SignupPage.tsx";
+import PhoneBinding from "./components/PhoneBinding.tsx";
 import UsersPage from "./pages/UsersPage.tsx";
 import { DraftProvider } from "./lib/drafts.tsx";
 import { isManagerPath, canReadUsers } from "./lib/constants.ts";
@@ -672,7 +673,12 @@ function Application() {
                   <dt>学号 / 人员编号</dt>
                   <dd>{user.id || "未提供"}</dd>
                 </div>
+                <div>
+                  <dt>绑定手机号</dt>
+                  <dd>{user.phone || "尚未绑定"}</dd>
+                </div>
               </dl>
+              <PhoneBinding phone={user.phone} onBound={setSession} />
               <p className="panel-note">
                 <Icon name="info" />
                 资料来自当前账号记录，如需更正请联系管理员。

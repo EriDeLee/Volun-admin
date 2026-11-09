@@ -7,6 +7,7 @@ type User struct {
 	Sub                   string `gorm:"primaryKey;size:128"`
 	ID                    string `gorm:"size:120;index"`
 	Name                  string
+	Phone                 string `gorm:"size:11;not null;default:''"`
 	Username              string `gorm:"index;size:120"`
 	PasswordHash          string
 	PasswordSetupRequired bool   `gorm:"not null;default:false"`

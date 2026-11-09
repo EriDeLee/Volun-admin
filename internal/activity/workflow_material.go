@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +24,51 @@ import (
 var attachmentTemplate []byte
 
 const templateChecksum = "D597252EA938C07F156D9F882EDBAFF04CDD942CC71350DB456D62BDAD5955BB"
+
+var materialRules = []string{"定位打卡", "扫动态码", "定位扫码"}
+var materialRecruitments = []string{"免审密码招募", "公开招募", "定向招募"}
+var materialGuarantees = []string{"志愿者保险", "集中乘车", "交通补贴", "餐饮或食物", "提供饮水", "提供住宿", "志愿者服装", "志愿服务工具", "免费体检", "专项培训", "志愿服务证书", "其他"}
+
+func (s *Service) applyMaterialDefaults(m *Material) {
+	d := s.MaterialDefaults
+	if m.Team == "" {
+		m.Team = d.Team
+	}
+	if m.Notes == "" {
+		m.Notes = d.Notes
+	}
+	if m.Training == "" {
+		m.Training = d.Training
+	}
+	for _, field := range []struct {
+		target *string
+		value  string
+	}{
+		{&m.ContactName, d.ContactName}, {&m.ContactPhone, d.ContactPhone},
+		{&m.ContactMobile, d.ContactMobile}, {&m.ContactEmail, d.ContactEmail},
+	} {
+		if field.value != "" {
+			*field.target = field.value
+		}
+	}
+	if m.Guarantees == nil {
+		m.Guarantees = []string{}
+	}
+}
+
+func validMaterialOptions(m Material) bool {
+	if m.CheckinRule != "" && !slices.Contains(materialRules, m.CheckinRule) || m.Recruitment != "" && !slices.Contains(materialRecruitments, m.Recruitment) {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, option := range m.Guarantees {
+		if !slices.Contains(materialGuarantees, option) || seen[option] {
+			return false
+		}
+		seen[option] = true
+	}
+	return true
+}
 
 func setCell(cell *etree.Element, value string) {
 	paragraphs := cell.SelectElements("p")
@@ -146,7 +192,11 @@ func fillAttachment(state State) ([]byte, error) {
 	dates := []string{}
 	seen := map[string]bool{}
 	for _, session := range b.Sessions {
-		date := session.Start[:10]
+		start, err := time.Parse(time.RFC3339, session.Start)
+		if err != nil {
+			return nil, errInvalid
+		}
+		date := start.In(projectTimezone).Format("2006-01-02")
 		if !seen[date] {
 			dates = append(dates, date)
 			seen[date] = true
@@ -165,7 +215,7 @@ func fillAttachment(state State) ([]byte, error) {
 		}
 	}
 	rules := map[int]bool{}
-	for i, v := range []string{"定位打卡", "扫动态码", "定位扫码"} {
+	for i, v := range materialRules {
 		if v == m.CheckinRule {
 			rules[i] = true
 		}
@@ -173,7 +223,7 @@ func fillAttachment(state State) ([]byte, error) {
 	if err := checkbox(rows[5].SelectElements("tc")[1], rules); err != nil {
 		return nil, err
 	}
-	labels := []string{"志愿者保险", "集中乘车", "交通补贴", "餐饮或食物", "提供饮水", "提供住宿", "志愿者服装", "志愿服务工具", "免费体检", "专项培训", "志愿服务证书", "其他"}
+	labels := materialGuarantees
 	selected := map[int]bool{}
 	for i, label := range labels {
 		for _, v := range m.Guarantees {
@@ -218,7 +268,7 @@ func fillAttachment(state State) ([]byte, error) {
 			}
 			start, _ := time.Parse(time.RFC3339, session.Start)
 			end, _ := time.Parse(time.RFC3339, session.End)
-			period := start.Format("2006-01-02 15:04") + " 至 " + end.Format("2006-01-02 15:04")
+			period := start.In(projectTimezone).Format("2006-01-02 15:04") + " 至 " + end.In(projectTimezone).Format("2006-01-02 15:04")
 			for i, value := range []string{strconv.Itoa(count), position.Name, strconv.Itoa(position.Capacity), strings.Join([]string{position.Description, period, hours}, "\n"), b.Location} {
 				setCell(cells[i], value)
 			}
@@ -321,11 +371,12 @@ func (s *Service) saveMaterial(c *gin.Context) {
 	if req.Guarantees == nil {
 		req.Guarantees = []string{}
 	}
+	s.applyMaterialDefaults(&req)
 	s.mutate(c, "material.save", func(tx *gorm.DB, p *model.Project, row model.Workflow, state *State, u model.User) (string, error) {
 		if err := dataEditable(p, u); err != nil {
 			return "", err
 		}
-		if len([]rune(req.Description)) > 500 || req.MaxDailyHours != nil && *req.MaxDailyHours < 0 {
+		if !validMaterialOptions(req) || len([]rune(req.Description)) > 500 || req.MaxDailyHours != nil && (*req.MaxDailyHours < 0 || *req.MaxDailyHours > 24) {
 			return "", errInvalid
 		}
 		state.Material = req
@@ -342,6 +393,7 @@ func (s *Service) generateMaterial(c *gin.Context) {
 		if err := dataEditable(p, u); err != nil {
 			return "", err
 		}
+		s.applyMaterialDefaults(&state.Material)
 		m := state.Material
 		if !basicsValid(state.Basics) {
 			return "", errInvalid

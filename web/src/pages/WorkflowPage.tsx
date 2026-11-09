@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import type { ProjectPageProps } from "../types.ts";
 import WorkspaceShell from "../components/WorkspaceShell.tsx";
 import AssignmentPicker from "../components/AssignmentPicker.tsx";
+import AttachmentMaterialFields from "../components/AttachmentMaterialFields.tsx";
 import Icon from "../components/Icon.tsx";
 import {
   request,
@@ -53,26 +54,6 @@ const labels: Record<string, string> = {
   location: "活动地点",
   description: "项目说明",
 };
-const materialLabels: Record<string, string> = {
-  team: "团队名称",
-  audience: "服务对象",
-  registration_start: "报名开始日期",
-  registration_end: "报名截止日期",
-  checkin_rule: "外部打卡规则",
-  checkin_start: "外部开始打卡时间",
-  checkin_end: "外部截止打卡时间",
-  recruitment: "外部招募方式",
-  password: "外部免审密码",
-  other_guarantee: "其他保障",
-  description: "服务内容（500字以内）",
-  contact_name: "联系人",
-  contact_phone: "联系电话",
-  contact_mobile: "手机",
-  contact_email: "邮箱",
-  notes: "补充说明",
-  training: "培训信息",
-};
-
 export default function WorkflowPage(
   props: ProjectPageProps & { id: string; initialTab?: string },
 ) {
@@ -1823,64 +1804,12 @@ export default function WorkflowPage(
                       void mutate("/material", material, "PUT");
                     }}
                   >
-                    <div className="workflow-grid">
-                      {Object.entries(materialLabels).map(([key, label]) => (
-                        <label key={key}>
-                          {label}
-                          <input
-                            type={
-                              key.includes("password")
-                                ? "password"
-                                : key.includes("registration_")
-                                  ? "date"
-                                  : "text"
-                            }
-                            maxLength={key === "description" ? 500 : 2000}
-                            value={String(
-                              material[key as keyof Material] ?? "",
-                            )}
-                            onChange={(e) =>
-                              setMaterial({
-                                ...material,
-                                [key]: e.target.value,
-                              })
-                            }
-                          />
-                        </label>
-                      ))}
-                      <label>
-                        预计每日最长小时
-                        <input
-                          min={0}
-                          step={1}
-                          type="number"
-                          value={material.max_daily_hours ?? ""}
-                          onChange={(e) =>
-                            setMaterial({
-                              ...material,
-                              max_daily_hours:
-                                e.target.value === ""
-                                  ? null
-                                  : Number(e.target.value),
-                            })
-                          }
-                        />
-                      </label>
-                      <label>
-                        志愿者保障（用顿号分隔）
-                        <input
-                          value={material.guarantees.join("、")}
-                          onChange={(e) =>
-                            setMaterial({
-                              ...material,
-                              guarantees: e.target.value
-                                .split("、")
-                                .filter(Boolean),
-                            })
-                          }
-                        />
-                      </label>
-                    </div>
+                    <AttachmentMaterialFields
+                      value={material}
+                      basics={data.state.basics}
+                      onChange={setMaterial}
+                      onEditPositions={() => setTab("overview")}
+                    />
                     <button className="button primary" disabled={busy}>
                       保存材料草稿
                     </button>

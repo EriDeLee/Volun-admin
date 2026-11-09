@@ -2,6 +2,7 @@ import type { ComponentType, ReactNode } from "react";
 import type { IconProps } from "./components/Icon.tsx";
 
 export interface User {
+  phone?: string;
   name?: string;
   username?: string;
   id?: string;
@@ -64,6 +65,7 @@ export interface ProjectList {
   scope: string;
 }
 export interface AdminUser {
+  phone?: string;
   username: string;
   name: string;
   id: string;

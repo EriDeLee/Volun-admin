@@ -20,7 +20,10 @@ import (
 	"volun-data/internal/model"
 )
 
-type Service struct{ DB *gorm.DB }
+type Service struct {
+	DB               *gorm.DB
+	MaterialDefaults Material
+}
 
 var statuses = []string{"立项", "筹备", "招募", "进行", "结项", "意向", "统计", "数据", "录入", "审核", "通过", "驳回"}
 var pendingStatuses = []string{"立项", "筹备", "招募", "结项", "意向"}

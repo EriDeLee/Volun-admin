@@ -38,6 +38,7 @@ func (s *Service) workflowState(c *gin.Context, write bool) {
 		return
 	}
 	state.Bindings = nil
+	s.applyMaterialDefaults(&state.Material)
 	if !dataManager(actor(c)) {
 		published := []Hour{}
 		if state.Review.Published {

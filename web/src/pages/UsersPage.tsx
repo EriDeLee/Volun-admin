@@ -34,6 +34,7 @@ export default function UsersPage({
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [editGroups, setEditGroups] = useState<string[]>([]);
   const [editStatus, setEditStatus] = useState("active");
+  const [editPhone, setEditPhone] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [notice, setNotice] = useState("");
@@ -103,6 +104,7 @@ export default function UsersPage({
     setEditing(user);
     setEditGroups([...user.groups]);
     setEditStatus(user.status);
+    setEditPhone(user.phone || "");
     setFormError("");
   };
 
@@ -139,6 +141,7 @@ export default function UsersPage({
           body: JSON.stringify({
             status: editStatus,
             groups: editGroups,
+            phone: editPhone,
           }),
         },
       );
@@ -350,6 +353,7 @@ export default function UsersPage({
                   <tr>
                     <th scope="col">姓名 / 账号</th>
                     <th scope="col">学号 / 人员编号</th>
+                    <th scope="col">绑定手机号</th>
                     <th scope="col">用户组</th>
                     <th scope="col">状态</th>
                     <th scope="col">密码</th>
@@ -370,6 +374,7 @@ export default function UsersPage({
                         </small>
                       </td>
                       <td>{u.id || "—"}</td>
+                      <td>{u.phone || "未绑定"}</td>
                       <td>
                         <div className="group-list">
                           {u.groups.length ? (
@@ -497,6 +502,17 @@ export default function UsersPage({
           </p>
           <form onSubmit={saveUser} className="activity-project-form">
             <div className="activity-form-fields">
+              <label>
+                绑定手机号
+                <input
+                  type="tel"
+                  disabled={saving}
+                  maxLength={20}
+                  value={editPhone}
+                  onChange={(event) => setEditPhone(event.target.value)}
+                  placeholder="留空解除绑定"
+                />
+              </label>
               <label className="full">
                 账号状态
                 <select
