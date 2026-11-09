@@ -5,11 +5,13 @@ const path = require("node:path");
 const os = require("node:os");
 
 (async () => {
-  const output = path.join(os.tmpdir(), "volun-recruitment-ui");
+  const darkMode = process.argv.includes("--dark");
+  const output = path.join(os.tmpdir(), darkMode ? "volun-recruitment-ui-dark" : "volun-recruitment-ui");
   await fs.mkdir(output, { recursive: true });
   const browser = await chromium.launch({ executablePath: "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    if (darkMode) await page.addInitScript(() => localStorage.setItem("volun.theme", "dark"));
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
     const user = { username: "data-admin", name: "数据管理员", id: "00001", groups: ["data_admin"], status: "active", password_setup_required: false, has_password: true };

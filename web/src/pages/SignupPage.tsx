@@ -2,6 +2,7 @@ import type { AuthSession, WorkspaceProps } from "../types.ts";
 import React, { useState } from "react";
 import { Brand } from "../components/WorkspaceShell.tsx";
 import Icon from "../components/Icon.tsx";
+import ThemeSelect from "../components/ThemeSelect.tsx";
 import { useProject } from "../components/ProjectContext.tsx";
 
 export default function SignupPage({
@@ -61,6 +62,7 @@ export default function SignupPage({
         <span className="activity-badge">
           {preview ? "填写预览" : "公开报名"}
         </span>
+        <ThemeSelect />
       </div>
       {!preview ? (
         <>

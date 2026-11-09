@@ -1,0 +1,163 @@
+:root {
+  color-scheme: light;
+  --page-bg: #f5f7fb;
+  --surface: #fff;
+  --surface-muted: #f6f8fc;
+  --surface-strong: #e4eaf4;
+  --surface-glass: #ffffffa6;
+  --text: #233149;
+  --text-strong: #172b43;
+  --text-muted: #65748b;
+  --text-subtle: #8290a5;
+  --on-accent: #fff;
+  --accent: #2457d6;
+  --accent-solid: #2457d6;
+  --accent-hover: #1b48bb;
+  --accent-bg: #edf3ff;
+  --accent-border: #a8bce8;
+  --border: #e1e7f0;
+  --border-strong: #c4d0e1;
+  --success: #168265;
+  --success-bg: #e9f6ef;
+  --success-border: #a3d7c0;
+  --warning: #946514;
+  --warning-bg: #fff5df;
+  --warning-border: #edcc83;
+  --danger: #bd3b4c;
+  --danger-bg: #fff0f1;
+  --danger-border: #edb2bb;
+  --purple: #8054bf;
+  --purple-bg: #f2edfd;
+  --purple-border: #cdb4ed;
+  --overlay: #17284766;
+  --focus: #85adff;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page-bg: #101722;
+  --surface: #192332;
+  --surface-muted: #1e2a3b;
+  --surface-strong: #29384c;
+  --surface-glass: #192332c9;
+  --text: #dce5f2;
+  --text-strong: #f0f4fa;
+  --text-muted: #a4b3c9;
+  --text-subtle: #8d9eb6;
+  --accent: #93b7ff;
+  --accent-solid: #3568dc;
+  --accent-hover: #4478ed;
+  --accent-bg: #223653;
+  --accent-border: #4b6da4;
+  --border: #334258;
+  --border-strong: #50627c;
+  --success: #7cdcb4;
+  --success-bg: #193a32;
+  --success-border: #326b59;
+  --warning: #f2cd83;
+  --warning-bg: #40341f;
+  --warning-border: #806739;
+  --danger: #ffa0ad;
+  --danger-bg: #442a35;
+  --danger-border: #8b4e60;
+  --purple: #cbb0ff;
+  --purple-bg: #352b4c;
+  --purple-border: #69518f;
+  --overlay: #030810b3;
+  --focus: #a2c3ff;
+}
+html {
+  background: var(--page-bg);
+  color: var(--text);
+}
+input,
+select,
+textarea {
+  color-scheme: inherit;
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-subtle);
+  opacity: 1;
+}
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+.theme-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 9px;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+}
+.theme-select select {
+  width: auto;
+  min-height: 36px;
+  padding: 0 18px 0 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.theme-select:focus-within {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.theme-select select:focus-visible {
+  outline: none;
+}
+.theme-standalone {
+  position: fixed;
+  top: 18px;
+  right: 22px;
+  z-index: 20;
+}
+.public-brand > .theme-select {
+  margin-left: auto;
+}
+.public-brand {
+  flex-wrap: wrap;
+}
+.workflow-qr {
+  background: #fff;
+  padding: 8px;
+}
+@media (max-width: 700px) {
+  .activity-topbar {
+    height: auto;
+    min-height: 76px;
+    flex-wrap: wrap;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+  .activity-top-actions {
+    gap: 7px;
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .activity-topbar > span {
+    min-width: calc(100% - 52px);
+  }
+  .activity-topbar > .theme-select {
+    margin-left: auto;
+  }
+  .theme-standalone {
+    top: 12px;
+    right: 14px;
+  }
+  .login-page .login-form {
+    padding-top: 32px;
+  }
+  .setup-header {
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+}

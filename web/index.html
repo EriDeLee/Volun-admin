@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#2457d6" />
+    <script>
+      // Apply the saved appearance before the first paint.
+      (function () {
+        var mode;
+        try {
+          mode = localStorage.getItem("volun.theme");
+        } catch (_) {}
+        var dark =
+          mode === "dark" ||
+          (mode !== "light" &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        document.documentElement.style.colorScheme = dark ? "dark" : "light";
+      })();
+    </script>
     <title>志愿服务 · 项目管理平台</title>
   </head>
   <body>

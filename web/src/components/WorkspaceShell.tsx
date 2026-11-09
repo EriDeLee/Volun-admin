@@ -2,6 +2,7 @@ import type { WorkspaceProps } from "../types.ts";
 import React, { useState } from "react";
 import Icon from "./Icon.tsx";
 import Sidebar from "./Sidebar.tsx";
+import ThemeSelect from "./ThemeSelect.tsx";
 
 export { default as Brand } from "./Brand.tsx";
 
@@ -46,6 +47,7 @@ export default function WorkspaceShell({
             工作空间 <b>/</b> <strong>{crumb}</strong>
           </span>
           <div className="activity-top-actions">
+            <ThemeSelect />
             <span className="activity-today">
               {new Date().toLocaleDateString("zh-CN", {
                 month: "long",

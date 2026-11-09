@@ -1,4 +1,5 @@
 import Sidebar from "./components/Sidebar.tsx";
+import ThemeSelect from "./components/ThemeSelect.tsx";
 import { asApiError } from "./lib/api.ts";
 import type {
   ActivityHomeProps,
@@ -305,6 +306,7 @@ export default function ActivityHome({
             工作空间 <b>/</b> <strong>工作台</strong>
           </span>
           <div className="activity-top-actions">
+            <ThemeSelect />
             <span className="activity-today">
               {new Date().toLocaleDateString("zh-CN", {
                 month: "long",

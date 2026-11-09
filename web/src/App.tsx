@@ -13,6 +13,8 @@ import UsersPage from "./pages/UsersPage.tsx";
 import { DraftProvider } from "./lib/drafts.tsx";
 import { isManagerPath, canReadUsers } from "./lib/constants.ts";
 import "./workspace.css";
+import "./theme.css";
+import ThemeSelect from "./components/ThemeSelect.tsx";
 import Icon from "./components/Icon.tsx";
 import { Brand } from "./components/WorkspaceShell.tsx";
 import { api } from "./lib/api.ts";
@@ -268,6 +270,7 @@ function Application() {
       <main className="setup-page">
         <header className="setup-header">
           <Brand />
+          <ThemeSelect />
           <span className="setup-verified">
             <Icon name="check" />
             学校身份已验证
@@ -384,6 +387,7 @@ function Application() {
   if (!session)
     return (
       <main className="login-page">
+        <ThemeSelect standalone />
         <section className="login-story">
           <Brand />
           <div className="story-copy">
@@ -580,6 +584,7 @@ function Application() {
           <span>
             个人空间 <b>/</b> <strong>个人信息</strong>
           </span>
+          <ThemeSelect />
           <button
             className="button secondary"
             onClick={logout}
