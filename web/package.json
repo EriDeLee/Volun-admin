@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "docx-preview": "^0.4.1",
     "react": "latest",
     "react-dom": "latest",
     "vite": "latest"

@@ -1,0 +1,103 @@
+.attachment-preview-dialog {
+  width: min(1080px, calc(100% - 24px));
+}
+
+.attachment-preview-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  height: min(960px, calc(100dvh - 40px));
+  overflow: hidden;
+}
+
+.attachment-preview-dialog > :not(.attachment-preview-frame) {
+  flex-shrink: 0;
+}
+
+.attachment-preview-dialog .activity-dialog-head p {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.attachment-preview-note {
+  padding: 12px 24px;
+  color: var(--text-muted);
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.attachment-preview-frame {
+  display: block;
+  width: 100%;
+  height: min(65dvh, 900px);
+  min-height: 0;
+  flex: 1;
+  border: 0;
+  background: #e9edf3;
+}
+
+.attachment-preview-toolbar {
+  padding: 8px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.attachment-preview-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.attachment-preview-toolbar select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-strong);
+  font: inherit;
+}
+
+.attachment-preview-frame[hidden] {
+  display: none;
+}
+
+.attachment-preview-message {
+  padding: 40px 24px;
+  text-align: center;
+}
+
+.attachment-preview-message .button {
+  margin-top: 16px;
+}
+
+.attachment-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+}
+
+.material-version-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.material-version-row > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.material-version-row small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted);
+}

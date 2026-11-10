@@ -4,6 +4,7 @@ import WorkspaceShell from "../components/WorkspaceShell.tsx";
 import AssignmentPicker from "../components/AssignmentPicker.tsx";
 import ProjectAccountPicker from "../components/ProjectAccountPicker.tsx";
 import AttachmentMaterialFields from "../components/AttachmentMaterialFields.tsx";
+import AttachmentPreview from "../components/AttachmentPreview.tsx";
 import Icon from "../components/Icon.tsx";
 import {
   request,
@@ -75,6 +76,9 @@ export default function WorkflowPage(
   const [member, setMember] = useState<Member>(emptyMember),
     [paste, setPaste] = useState("");
   const [reason, setReason] = useState("");
+  const [previewFile, setPreviewFile] = useState<
+    History["materials"][number] | null
+  >(null);
   const [now, setNow] = useState(Date.now);
   const [hourValues, setHourValues] = useState<Record<string, string>>({}),
     [source, setSource] = useState("登记");
@@ -1865,15 +1869,35 @@ export default function WorkflowPage(
                 <h3>材料历史版本</h3>
                 {history.materials.length ? (
                   history.materials.map((file) => (
-                    <p key={file.id}>
-                      <a href={`/api/v1${base}/material/${file.id}`}>
-                        {file.filename} · 版本 {file.version}
-                      </a>{" "}
-                      · {new Date(file.created_at).toLocaleString()}
-                    </p>
+                    <div className="material-version-row" key={file.id}>
+                      <div>
+                        <strong>
+                          {file.filename} · 版本 {file.version}
+                        </strong>
+                        <small>
+                          {new Date(file.created_at).toLocaleString()}
+                        </small>
+                      </div>
+                      <button
+                        className="button secondary"
+                        onClick={() => setPreviewFile(file)}
+                      >
+                        <Icon name="eye" />
+                        预览 / 下载 Word
+                      </button>
+                    </div>
                   ))
                 ) : (
                   <p>暂无已生成的正式附件1。</p>
+                )}
+                {previewFile && (
+                  <AttachmentPreview
+                    key={previewFile.id}
+                    file={previewFile}
+                    url={`/api/v1${base}/material/${encodeURIComponent(previewFile.id)}`}
+                    onClose={() => setPreviewFile(null)}
+                    onSessionIssue={onSessionIssue}
+                  />
                 )}
               </section>
             )}
