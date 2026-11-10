@@ -1798,14 +1798,66 @@ export default function WorkflowPage(
                                     key={session.id}
                                   >
                                     <h3>{session.name || "未命名场次"}</h3>
-                                    <p>
-                                      {localTime(session.start).replace(
-                                        "T",
-                                        " ",
-                                      )}{" "}
-                                      至{" "}
-                                      {localTime(session.end).replace("T", " ")}
-                                    </p>
+                                    {can("basics.edit") ? (
+                                      <div className="workflow-grid">
+                                        <label>
+                                          场次名称
+                                          <input
+                                            required
+                                            value={session.name}
+                                            onChange={(e) =>
+                                              editSession(
+                                                index,
+                                                "name",
+                                                e.target.value,
+                                              )
+                                            }
+                                          />
+                                        </label>
+                                        <label>
+                                          开始时间
+                                          <input
+                                            type="datetime-local"
+                                            required
+                                            value={localTime(session.start)}
+                                            onChange={(e) =>
+                                              editSession(
+                                                index,
+                                                "start",
+                                                iso(e.target.value),
+                                              )
+                                            }
+                                          />
+                                        </label>
+                                        <label>
+                                          结束时间
+                                          <input
+                                            type="datetime-local"
+                                            required
+                                            value={localTime(session.end)}
+                                            onChange={(e) =>
+                                              editSession(
+                                                index,
+                                                "end",
+                                                iso(e.target.value),
+                                              )
+                                            }
+                                          />
+                                        </label>
+                                      </div>
+                                    ) : (
+                                      <p>
+                                        {localTime(session.start).replace(
+                                          "T",
+                                          " ",
+                                        )}{" "}
+                                        至{" "}
+                                        {localTime(session.end).replace(
+                                          "T",
+                                          " ",
+                                        )}
+                                      </p>
+                                    )}
                                     {can("basics.edit") ? (
                                       <PositionList
                                         positions={session.positions}
@@ -1862,6 +1914,25 @@ export default function WorkflowPage(
                                     {!session.positions.length && (
                                       <p>暂无岗位。</p>
                                     )}
+                                    {can("basics.edit") && (
+                                      <div className="activity-actions">
+                                        <button
+                                          type="button"
+                                          className="button secondary"
+                                          aria-label={`移除场次${index + 1}`}
+                                          onClick={() =>
+                                            setBasics({
+                                              ...basics,
+                                              sessions: basics.sessions.filter(
+                                                (_, i) => i !== index,
+                                              ),
+                                            })
+                                          }
+                                        >
+                                          移除场次
+                                        </button>
+                                      </div>
+                                    )}
                                   </section>
                                 ))
                               ) : (
@@ -1869,6 +1940,35 @@ export default function WorkflowPage(
                               )}
                               {can("basics.edit") && (
                                 <>
+                                  <button
+                                    type="button"
+                                    className="button secondary"
+                                    onClick={() =>
+                                      setBasics({
+                                        ...basics,
+                                        sessions: [
+                                          ...basics.sessions,
+                                          {
+                                            id: crypto.randomUUID(),
+                                            name: "",
+                                            start: "",
+                                            end: "",
+                                            positions: [
+                                              {
+                                                id: crypto.randomUUID(),
+                                                name: "",
+                                                capacity: 1,
+                                                hours: null,
+                                                description: "",
+                                              },
+                                            ],
+                                          },
+                                        ],
+                                      })
+                                    }
+                                  >
+                                    增加场次
+                                  </button>
                                   {data.approval === "approved" && (
                                     <label>
                                       变更原因

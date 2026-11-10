@@ -2,6 +2,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -218,6 +219,23 @@ test("inline positions can be edited and submitted without losing the material d
   await user.click(within(details).getAllByRole("button", { name: "编辑" })[0]);
   await user.type(within(details).getByLabelText("岗位1说明"), "负责入口引导");
   await user.click(within(details).getByRole("button", { name: "完成" }));
+  await user.click(within(details).getByRole("button", { name: "增加场次" }));
+  expect(within(details).getAllByLabelText("场次名称")).toHaveLength(3);
+  await user.click(within(details).getByRole("button", { name: "移除场次3" }));
+  expect(within(details).getAllByLabelText("场次名称")).toHaveLength(2);
+  await user.click(within(details).getByRole("button", { name: "增加场次" }));
+  await user.type(within(details).getAllByLabelText("场次名称")[2], "新增场次");
+  fireEvent.change(within(details).getAllByLabelText("开始时间")[2], {
+    target: { value: "2026-11-09T13:00" },
+  });
+  fireEvent.change(within(details).getAllByLabelText("结束时间")[2], {
+    target: { value: "2026-11-09T15:00" },
+  });
+  const addedSession = within(details)
+    .getByRole("heading", { name: "新增场次" })
+    .closest("section")!;
+  await user.type(within(addedSession).getByLabelText("岗位1名称"), "接待");
+  await user.click(within(addedSession).getByRole("button", { name: "完成" }));
   await user.type(within(details).getByLabelText("变更原因"), "补充岗位说明");
   await user.click(
     within(details).getByRole("button", { name: "提交变更申请" }),
@@ -232,6 +250,10 @@ test("inline positions can be edited and submitted without losing the material d
               positions: [
                 expect.objectContaining({ description: "负责入口引导" }),
               ],
+            }),
+            expect.objectContaining({
+              name: "新增场次",
+              positions: [expect.objectContaining({ name: "接待" })],
             }),
           ]),
         }),
