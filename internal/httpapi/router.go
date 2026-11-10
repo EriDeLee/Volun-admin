@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"volun-data/internal/activity"
@@ -74,7 +76,24 @@ func NewRouter(db Pinger, log *slog.Logger, authService *auth.Service) *gin.Engi
 	authRoutes.POST("/setup-password", authService.SetInitialPassword)
 	authRoutes.GET("/sso/start", authService.SSOStart)
 	defaults := authService.MaterialDefaults
-	activityService := &activity.Service{DB: authService.DB, MaterialDefaults: activity.Material{
+	frontend := strings.TrimRight(authService.Config.FrontendURL, "/")
+	if frontend == "" {
+		frontend = "http://localhost:5173"
+	}
+	// Keep previously shared API-host links usable after correcting QR origins.
+	r.GET("/signup", func(c *gin.Context) {
+		target, err := url.Parse(frontend)
+		if err != nil || target.Host == "" || target.Host == c.Request.Host {
+			errhandler.Fail(c, errhandler.ResourceNotFound)
+			return
+		}
+		target.Path = "/signup"
+		target.RawQuery = c.Request.URL.RawQuery
+		c.Header("Cache-Control", "no-store")
+		c.Header("Referrer-Policy", "no-referrer")
+		c.Redirect(http.StatusTemporaryRedirect, target.String())
+	})
+	activityService := &activity.Service{DB: authService.DB, FrontendURL: frontend, MaterialDefaults: activity.Material{
 		Team: defaults.Team, ContactName: defaults.ContactName, ContactPhone: defaults.ContactPhone,
 		ContactMobile: defaults.ContactMobile, ContactEmail: defaults.ContactEmail, Notes: defaults.Notes, Training: defaults.Training,
 	}}

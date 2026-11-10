@@ -22,6 +22,7 @@ import (
 
 type Service struct {
 	DB               *gorm.DB
+	FrontendURL      string
 	MaterialDefaults Material
 }
 

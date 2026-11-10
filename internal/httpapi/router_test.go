@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http/httptest"
 	"strings"
@@ -23,6 +24,31 @@ import (
 type stubPinger struct{ err error }
 
 func (s stubPinger) PingContext(context.Context) error { return s.err }
+
+func TestLegacySignupRedirectsToFrontend(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, tc := range []struct {
+		frontend, host string
+		status         int
+	}{
+		{"http://127.0.0.1:5173", "127.0.0.1:8080", 307},
+		{"https://volunteer.example.test", "api.example.test", 307},
+		{"http://127.0.0.1:8080", "127.0.0.1:8080", 404},
+	} {
+		service := &auth.Service{Config: config.Auth{FrontendURL: tc.frontend}}
+		r := NewRouter(stubPinger{}, slog.New(slog.NewTextHandler(io.Discard, nil)), service)
+		query := "attendance=session&project=project&token=synthetic%2Dtoken"
+		req := httptest.NewRequest("GET", "http://"+tc.host+"/signup?"+query, nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != tc.status {
+			t.Fatalf("got %d want %d", w.Code, tc.status)
+		}
+		if tc.status == 307 && w.Header().Get("Location") != tc.frontend+"/signup?"+query {
+			t.Fatalf("lost signup parameters: %s", w.Header().Get("Location"))
+		}
+	}
+}
 
 func TestRouterResponsesAndLogRedaction(t *testing.T) {
 	gin.SetMode(gin.TestMode)

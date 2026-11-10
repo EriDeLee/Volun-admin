@@ -1,7 +1,6 @@
 package activity
 
 import (
-	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -250,17 +249,11 @@ func (s *Service) qrCode(c *gin.Context) {
 		}
 		query.Set("form", form.ID)
 	}
-	// Public origin is configured by the reverse proxy/host, never supplied in a URL parameter.
-	scheme := "http"
-	if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
-		scheme = "https"
-	}
-	host := c.Request.Host
-	if strings.ContainsAny(host, "\r\n/\\") {
-		failWorkflow(c, errInvalid)
+	link, err := signupURL(s.FrontendURL, query)
+	if err != nil {
+		failWorkflow(c, err)
 		return
 	}
-	link := fmt.Sprintf("%s://%s/signup?%s", scheme, host, query.Encode())
 	data, err := qrcode.Encode(link, qrcode.Medium, 512)
 	if err != nil {
 		failWorkflow(c, err)
@@ -268,4 +261,16 @@ func (s *Service) qrCode(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "no-store")
 	c.Data(200, "image/png", data)
+}
+
+func signupURL(frontend string, query url.Values) (string, error) {
+	target, err := url.Parse(frontend)
+	if err != nil || target.Host == "" || (target.Scheme != "http" && target.Scheme != "https") || target.User != nil {
+		return "", errInvalid
+	}
+	target.Path = "/signup"
+	target.RawPath = ""
+	target.RawQuery = query.Encode()
+	target.Fragment = ""
+	return target.String(), nil
 }
