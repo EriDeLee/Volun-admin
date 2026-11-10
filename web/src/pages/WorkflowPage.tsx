@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import type { ProjectPageProps } from "../types.ts";
 import WorkspaceShell from "../components/WorkspaceShell.tsx";
 import AssignmentPicker from "../components/AssignmentPicker.tsx";
+import ProjectAccountPicker from "../components/ProjectAccountPicker.tsx";
 import AttachmentMaterialFields from "../components/AttachmentMaterialFields.tsx";
 import Icon from "../components/Icon.tsx";
 import {
@@ -352,6 +353,40 @@ export default function WorkflowPage(
       className="workflow-form recruit-member-form"
     >
       <h3>{member.id ? "修改成员" : "登记成员"}</h3>
+      {!member.id && (
+        <ProjectAccountPicker
+          base={base}
+          onSelect={(account) =>
+            setMember((previous) => ({
+              ...previous,
+              account_username: account.username,
+              name: account.name,
+              number: account.number,
+              phone: account.phone,
+            }))
+          }
+        />
+      )}
+      {member.account_username && (
+        <p className="recruit-full">
+          已选择账号：{member.account_username}{" "}
+          <button
+            type="button"
+            className="button secondary"
+            onClick={() =>
+              setMember((previous) => ({
+                ...previous,
+                account_username: undefined,
+                name: "",
+                number: "",
+                phone: "",
+              }))
+            }
+          >
+            改为手动填写
+          </button>
+        </p>
+      )}
       {["name", "number", "department", "phone"].map((key) => (
         <label key={key}>
           {
@@ -367,7 +402,9 @@ export default function WorkflowPage(
           <input
             required={key === "name" || key === "number"}
             readOnly={
-              !!member.identity_verified && (key === "name" || key === "number")
+              (!!member.identity_verified &&
+                (key === "name" || key === "number")) ||
+              (!!member.account_username && key !== "department")
             }
             value={member[key as "name" | "number" | "department" | "phone"]}
             onChange={(e) => updateMember(key as keyof Member, e.target.value)}

@@ -100,4 +100,25 @@ func TestRecruitmentIdentity(t *testing.T) {
 	if state.Members[0].IdentitySource != "manual" || !state.Members[0].IdentityVerified {
 		t.Fatal("editing member overwrote server identity status")
 	}
+	candidateToken := f.identity(t, "candidate_user", false)
+	if err := f.db.Model(&model.User{}).Where("username=?", "candidate_user").Updates(map[string]any{"id": "001235", "name": "待选志愿者", "status": "active"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	candidates := call("GET", managed+"/members/candidates?q=001235", nil, manager, 200)
+	if !strings.Contains(candidates.Body.String(), "待选志愿者") || strings.Contains(candidates.Body.String(), "password_hash") || strings.Contains(candidates.Body.String(), "groups") {
+		t.Fatal("candidate search did not return minimal volunteer fields")
+	}
+	call("GET", managed+"/members/candidates?q=001235", nil, owner, 403)
+	call("GET", managed+"/members/candidates?q=001235", nil, account, 403)
+	selected := map[string]any{"account_username": "candidate_user", "name": "伪造姓名", "number": "伪造学号", "session_id": "s", "position_id": "p"}
+	call("PUT", managed+"/members", map[string]any{"members": []any{selected}}, manager, 200)
+	own := decode[struct{ Member activity.Member }](t, call("GET", public+"/me", nil, candidateToken, 200)).Member
+	if own.Name != "待选志愿者" || own.Number != "001235" || !own.IdentityVerified || own.IdentitySource != "account" {
+		t.Fatal("selected account identity was not bound authoritatively")
+	}
+	call("PUT", managed+"/members", map[string]any{"members": []any{selected}}, manager, 409)
+	if err := f.db.Model(&model.Project{}).Where("id=?", p.ID).Update("status", "通过").Error; err != nil {
+		t.Fatal(err)
+	}
+	call("GET", managed+"/members/candidates?q=001235", nil, manager, 409)
 }

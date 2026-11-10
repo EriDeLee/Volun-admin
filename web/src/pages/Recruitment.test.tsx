@@ -464,6 +464,58 @@ test("an account without a phone binds it before registration", async () => {
   expect(screen.queryByRole("heading", { name: "绑定报名手机号" })).toBeNull();
 });
 
+test("project registration selects an account without directory access", async () => {
+  const data = initial();
+  const candidate = {
+    username: "volunteer",
+    name: "已有账号志愿者",
+    number: "001235",
+    phone: "13000000001",
+  };
+  let saved: unknown;
+  vi.mocked(request).mockImplementation(async (path, body) => {
+    if (path.includes("/members/candidates?"))
+      return { items: [candidate] } as never;
+    if (path.endsWith("/history"))
+      return { events: [], materials: [] } as never;
+    if (path.endsWith("/members")) saved = body;
+    return data as never;
+  });
+  render(<WorkflowPage {...props} initialTab="recruit" />);
+  await userEvent.type(
+    await screen.findByLabelText("姓名、学号或账号"),
+    "001235",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "查询志愿者账号" }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: /选择 已有账号志愿者/ }),
+  );
+  const name = screen.getByRole<HTMLInputElement>("textbox", {
+    name: "姓名",
+  });
+  expect(name.value).toBe(candidate.name);
+  expect(name.readOnly).toBe(true);
+  expect(
+    screen.getByRole<HTMLInputElement>("textbox", { name: "联系电话" }).value,
+  ).toBe(candidate.phone);
+  await userEvent.click(screen.getByRole("checkbox", { name: /引导/ }));
+  await userEvent.click(screen.getByRole("button", { name: "保存成员" }));
+  await waitFor(() =>
+    expect(saved).toMatchObject({
+      members: [
+        {
+          account_username: candidate.username,
+          name: candidate.name,
+          number: candidate.number,
+        },
+      ],
+    }),
+  );
+  expect(
+    vi.mocked(request).mock.calls.some(([path]) => path.startsWith("/admin/")),
+  ).toBe(false);
+});
+
 test("identity review excludes account registrations", async () => {
   const data = initial();
   data.state.members = [

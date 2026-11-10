@@ -28,6 +28,7 @@ export interface Assignment {
   position_id: string;
 }
 export interface Member {
+  account_username?: string;
   id: string;
   name: string;
   number: string;

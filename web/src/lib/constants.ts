@@ -60,5 +60,4 @@ export const isSuperAdmin = (data: AuthSession | null) =>
 
 export const isUsersPath = (path: string) => path === "/users";
 
-export const canReadUsers = (data: AuthSession | null) =>
-  !!data?.user.groups.some((g) => ["super_admin", "data_admin"].includes(g));
+export const canReadUsers = (data: AuthSession | null) => isSuperAdmin(data);

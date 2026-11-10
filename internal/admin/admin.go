@@ -98,17 +98,6 @@ func userJSON(u model.User) dto.AdminUserResponse {
 	}
 }
 
-// RequireDirectory allows administrators to read the account directory.
-func RequireDirectory(c *gin.Context) {
-	u, ok := c.MustGet("user").(model.User)
-	if !ok || !hasGroup(u, "super_admin") && !hasGroup(u, "data_admin") {
-		errhandler.Fail(c, errhandler.PermissionDenied)
-		return
-	}
-	c.Header("Cache-Control", "no-store")
-	c.Next()
-}
-
 // RequireSuperAdmin runs after authentication and initial-password enforcement.
 func RequireSuperAdmin(c *gin.Context) {
 	u, ok := c.MustGet("user").(model.User)

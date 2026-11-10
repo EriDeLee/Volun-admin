@@ -86,8 +86,8 @@ func NewRouter(db Pinger, log *slog.Logger, authService *auth.Service) *gin.Engi
 	activityRoutes.GET("/projects/:id", activityService.GetProject)
 	activityService.RegisterWorkflow(activityRoutes, api.Group("/public", authService.OptionalIdentity()))
 	adminService := &admin.Service{DB: authService.DB}
-	api.GET("/admin/users", authService.Middleware(), admin.RequireDirectory, adminService.ListUsers)
 	adminRoutes := api.Group("/admin", authService.Middleware(), admin.RequireSuperAdmin)
+	adminRoutes.GET("/users", adminService.ListUsers)
 	adminRoutes.POST("/users", adminService.CreateUser)
 	adminRoutes.POST("/users/:username/reset-password", adminService.ResetPassword)
 	adminRoutes.POST("/users/import", adminService.ImportUsers)

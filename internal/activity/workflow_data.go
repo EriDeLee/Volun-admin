@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -62,10 +63,50 @@ func validMember(m Member, b Basics) bool {
 	return strings.TrimSpace(m.Name) != "" && len([]rune(m.Name)) <= 80 && strings.TrimSpace(m.Number) != "" && len(m.Number) <= 120 && len([]rune(m.Department)) <= 100 && len(m.Phone) <= 50 && len([]rune(m.Notes)) <= 1000 && assignmentsValid(m, b)
 }
 
+// memberCandidates exposes only volunteer fields within an editable project.
+func (s *Service) memberCandidates(c *gin.Context) {
+	p, err := s.getProject(c, true)
+	if err == nil {
+		err = dataEditable(&p, actor(c))
+	}
+	if err != nil {
+		failWorkflow(c, err)
+		return
+	}
+	q := strings.TrimSpace(c.Query("q"))
+	if utf8.RuneCountInString(q) > 160 {
+		failWorkflow(c, errInvalid)
+		return
+	}
+	type candidate struct {
+		Username string `json:"username"`
+		Name     string `json:"name"`
+		Number   string `json:"number" gorm:"column:id"`
+		Phone    string `json:"phone"`
+	}
+	items := []candidate{}
+	if q != "" {
+		like := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(q) + "%"
+		err = s.DB.WithContext(c.Request.Context()).Model(&model.User{}).
+			Select("username, name, id, phone").Where("status = ? AND name <> '' AND id <> ''", "active").
+			Where("(name LIKE ? ESCAPE '!' OR id LIKE ? ESCAPE '!' OR username LIKE ? ESCAPE '!')", like, like, like).
+			Order("id, username").Limit(20).Scan(&items).Error
+		if err != nil {
+			failWorkflow(c, err)
+			return
+		}
+	}
+	c.Header("Cache-Control", "no-store")
+	errhandler.OK(c, gin.H{"items": items})
+}
+
 func (s *Service) saveMembers(c *gin.Context) {
 	var req struct {
-		Members []Member `json:"members"`
-		Reason  string   `json:"reason"`
+		Members []struct {
+			Member
+			AccountUsername string `json:"account_username"`
+		} `json:"members"`
+		Reason string `json:"reason"`
 	}
 	if !decodeBody(c, &req) {
 		return
@@ -75,14 +116,37 @@ func (s *Service) saveMembers(c *gin.Context) {
 		return
 	}
 	for i := range req.Members {
-		normalizeMember(&req.Members[i])
+		normalizeMember(&req.Members[i].Member)
 	}
 	s.mutate(c, "members.save", func(tx *gorm.DB, p *model.Project, row model.Workflow, state *State, u model.User) (string, error) {
 		if err := dataEditable(p, u); err != nil {
 			return "", err
 		}
 		seen := map[string]bool{}
-		for _, m := range req.Members {
+		accountSubs := map[int]string{}
+		for i := range req.Members {
+			input := &req.Members[i]
+			if input.AccountUsername != "" {
+				if input.ID != "" {
+					return "", errInvalid
+				}
+				var users []model.User
+				if err := tx.Where("username=? AND status=?", input.AccountUsername, "active").Limit(2).Find(&users).Error; err != nil {
+					return "", err
+				}
+				if len(users) != 1 || users[0].Name == "" || users[0].ID == "" {
+					return "", errInvalid
+				}
+				u := users[0]
+				input.Name, input.Number, input.Phone = u.Name, u.ID, u.Phone
+				accountSubs[i] = u.Sub
+				for _, sub := range state.Bindings {
+					if sub == u.Sub {
+						return "", errConflict
+					}
+				}
+			}
+			m := input.Member
 			if !validMember(m, state.Basics) || seen[m.Number] {
 				return "", errInvalid
 			}
@@ -93,7 +157,8 @@ func (s *Service) saveMembers(c *gin.Context) {
 				}
 			}
 		}
-		for _, m := range req.Members {
+		for index, input := range req.Members {
+			m := input.Member
 			found := false
 			for i, old := range state.Members {
 				if old.ID == m.ID && m.ID != "" {
@@ -134,6 +199,11 @@ func (s *Service) saveMembers(c *gin.Context) {
 				m.Source = "manual"
 				m.IdentitySource = "manual"
 				m.IdentityVerified = false
+				if sub := accountSubs[index]; sub != "" {
+					m.IdentitySource = "account"
+					m.IdentityVerified = true
+					state.Bindings[m.ID] = sub
+				}
 				m.Intent = "未填写"
 				state.Members = append(state.Members, m)
 			}
