@@ -172,7 +172,7 @@ func TestPublicIdentityPermissionsAndReview(t *testing.T) {
 	if err := f.db.Model(&model.Project{}).Where("id=?", p.ID).Updates(map[string]any{"approval": "approved", "status": "筹备"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	state := activity.State{Basics: activity.Basics{Name: p.Name, Department: p.Department, StartsOn: p.StartsOn, EndsOn: p.EndsOn, Location: p.Location, Sessions: []activity.Session{{ID: "s", Name: "上午", Start: "2026-11-08T08:00:00+08:00", End: "2026-11-08T12:00:00+08:00", Positions: []activity.Position{{ID: "pos", Name: "引导", Capacity: 2}}}}}, Form: activity.Form{ID: "form", Published: true}, IntentForm: activity.Form{ID: "intent", Published: true}}
+	state := activity.State{Basics: activity.Basics{Guarantees: []string{"提供饮水"}, OtherGuarantee: "往返接送", Name: p.Name, Department: p.Department, StartsOn: p.StartsOn, EndsOn: p.EndsOn, Location: p.Location, Sessions: []activity.Session{{ID: "s", Name: "上午", Start: "2026-11-08T08:00:00+08:00", End: "2026-11-08T12:00:00+08:00", Positions: []activity.Position{{ID: "pos", Name: "引导", Capacity: 2}}}}}, Form: activity.Form{ID: "form", Published: true}, IntentForm: activity.Form{ID: "intent", Published: true}}
 	encoded, _ := json.Marshal(state)
 	if err := f.db.Create(&model.Workflow{ProjectID: p.ID, Version: 1, State: string(encoded)}).Error; err != nil {
 		t.Fatal(err)
@@ -215,6 +215,26 @@ func TestPublicIdentityPermissionsAndReview(t *testing.T) {
 			body = map[string]any{"rows": []map[string]any{{"member_id": "m", "hours": 1}}}
 		}
 		call("PUT", base+path, body, owner, nil, 403)
+	}
+
+	publicInfo := decode[struct {
+		Guarantees     []string `json:"guarantees"`
+		OtherGuarantee string   `json:"other_guarantee"`
+	}](t, call("GET", public+"/forms/form", nil, "", nil, 200))
+	if len(publicInfo.Guarantees) != 1 || publicInfo.Guarantees[0] != "提供饮水" || publicInfo.OtherGuarantee != "往返接送" {
+		t.Fatalf("public guarantees: %+v", publicInfo)
+	}
+	call("PUT", base+"/material", activity.Material{Guarantees: []string{"专项培训"}, OtherGuarantee: "不应覆盖"}, data, nil, 200)
+	var saved model.Workflow
+	if err := f.db.First(&saved, "project_id=?", p.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	var savedState activity.State
+	if err := json.Unmarshal([]byte(saved.State), &savedState); err != nil {
+		t.Fatal(err)
+	}
+	if len(savedState.Material.Guarantees) != 1 || savedState.Material.Guarantees[0] != "提供饮水" || savedState.Material.OtherGuarantee != "往返接送" {
+		t.Fatalf("material overwrote approved guarantees: %+v", savedState.Material)
 	}
 	member := activity.Member{Name: "同学", Number: "001", Phone: "13800000000", SessionID: "s", PositionID: "pos"}
 	registration := map[string]any{"key": "random-registration-key-123456", "member": member}

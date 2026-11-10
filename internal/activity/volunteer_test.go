@@ -16,7 +16,7 @@ func TestVolunteerProjectsPrivacyAndRecruitment(t *testing.T) {
 	token := f.identity(t, "formal_user", false)
 	for _, id := range []string{"own", "open", "closed", "expired", "draft", "other"} {
 		p := model.Project{ID: id, Code: id, Name: id, Approval: "approved", Status: "招募"}
-		state := activity.State{Bindings: map[string]string{}, Form: activity.Form{ID: "form", Published: true}}
+		state := activity.State{Basics: activity.Basics{Guarantees: []string{"提供饮水"}, OtherGuarantee: "往返接送"}, Draft: &activity.Basics{Guarantees: []string{"专项培训"}}, Bindings: map[string]string{}, Form: activity.Form{ID: "form", Published: true}}
 		switch id {
 		case "own":
 			p.Status = "通过"
@@ -52,11 +52,13 @@ func TestVolunteerProjectsPrivacyAndRecruitment(t *testing.T) {
 		t.Fatalf("anonymous status: %d", w.Code)
 	}
 	type item struct {
-		Project      dto.ProjectResponse `json:"project"`
-		FormID       string              `json:"form_id"`
-		Registered   bool                `json:"registered"`
-		Participated bool                `json:"participated"`
-		Hours        *int                `json:"recognized_hours"`
+		Guarantees     []string            `json:"guarantees"`
+		OtherGuarantee string              `json:"other_guarantee"`
+		Project        dto.ProjectResponse `json:"project"`
+		FormID         string              `json:"form_id"`
+		Registered     bool                `json:"registered"`
+		Participated   bool                `json:"participated"`
+		Hours          *int                `json:"recognized_hours"`
 	}
 	result := decode[struct {
 		Items []item `json:"items"`
@@ -65,6 +67,10 @@ func TestVolunteerProjectsPrivacyAndRecruitment(t *testing.T) {
 		t.Fatalf("unexpected projects: %+v", result)
 	}
 	for _, i := range result.Items {
+		if len(i.Guarantees) != 1 || i.Guarantees[0] != "提供饮水" || i.OtherGuarantee != "往返接送" {
+			t.Fatalf("approved guarantees not exposed: %+v", i)
+		}
+
 		if i.Project.ID == "own" && (!i.Registered || !i.Participated || i.Hours != nil || i.FormID != "") {
 			t.Fatalf("private record: %+v", i)
 		}

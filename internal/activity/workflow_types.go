@@ -18,13 +18,15 @@ import (
 )
 
 type Basics struct {
-	Name        string    `json:"name"`
-	Department  string    `json:"department"`
-	StartsOn    string    `json:"starts_on"`
-	EndsOn      string    `json:"ends_on"`
-	Location    string    `json:"location"`
-	Description string    `json:"description"`
-	Sessions    []Session `json:"sessions"`
+	Guarantees     []string  `json:"guarantees"`
+	OtherGuarantee string    `json:"other_guarantee"`
+	Name           string    `json:"name"`
+	Department     string    `json:"department"`
+	StartsOn       string    `json:"starts_on"`
+	EndsOn         string    `json:"ends_on"`
+	Location       string    `json:"location"`
+	Description    string    `json:"description"`
+	Sessions       []Session `json:"sessions"`
 }
 
 type Session struct {
@@ -252,10 +254,34 @@ func loadState(db *gorm.DB, p model.Project) (model.Workflow, State, error) {
 	if state.Bindings == nil {
 		state.Bindings = map[string]string{}
 	}
+	normalizeGuarantees(&state)
 	return row, state, err
 }
 
+// Older projects stored guarantees in attachment supplements. An explicit empty
+// slice in basics means they have since been cleared through the approval flow.
+func normalizeGuarantees(state *State) {
+	if state.Basics.Guarantees == nil {
+		state.Basics.Guarantees = append([]string{}, state.Material.Guarantees...)
+		state.Basics.OtherGuarantee = state.Material.OtherGuarantee
+	}
+	if state.Draft != nil && state.Draft.Guarantees == nil {
+		state.Draft.Guarantees = append([]string{}, state.Basics.Guarantees...)
+		state.Draft.OtherGuarantee = state.Basics.OtherGuarantee
+	}
+	state.Material.Guarantees = append([]string{}, state.Basics.Guarantees...)
+	state.Material.OtherGuarantee = state.Basics.OtherGuarantee
+}
+
+func inheritGuarantees(next *Basics, current Basics) {
+	if next.Guarantees == nil {
+		next.Guarantees = append([]string{}, current.Guarantees...)
+		next.OtherGuarantee = current.OtherGuarantee
+	}
+}
+
 func saveState(db *gorm.DB, p model.Project, row model.Workflow, state State, u model.User, action, reason string) error {
+	normalizeGuarantees(&state)
 	encoded, err := json.Marshal(state)
 	if err != nil {
 		return err
@@ -286,6 +312,9 @@ func saveState(db *gorm.DB, p model.Project, row model.Workflow, state State, u 
 var projectTimezone = time.FixedZone("Asia/Shanghai", 8*60*60)
 
 func basicsValid(b Basics) bool {
+	if !validMaterialOptions(Material{Guarantees: b.Guarantees}) || len([]rune(b.OtherGuarantee)) > 2000 {
+		return false
+	}
 	start, e1 := time.Parse(time.DateOnly, b.StartsOn)
 	end, e2 := time.Parse(time.DateOnly, b.EndsOn)
 	if strings.TrimSpace(b.Name) == "" || len([]rune(b.Name)) > 80 || strings.TrimSpace(b.Department) == "" || len([]rune(b.Department)) > 80 || strings.TrimSpace(b.Location) == "" || len([]rune(b.Location)) > 160 || len([]rune(b.Description)) > 2000 || e1 != nil || e2 != nil || end.Before(start) || len(b.Sessions) == 0 || len(b.Sessions) > 100 {

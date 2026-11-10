@@ -103,3 +103,28 @@ func TestMaterialDefaultsAndDocumentOptions(t *testing.T) {
 	}
 	t.Fatal("generated document missing main XML")
 }
+
+func TestGuaranteesBelongToApprovedBasics(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		basics Basics
+		want   string
+		other  string
+	}{
+		{name: "legacy", basics: Basics{}, want: "提供饮水", other: "旧保障"},
+		{name: "approved", basics: Basics{Guarantees: []string{"志愿者保险"}, OtherGuarantee: "新保障"}, want: "志愿者保险", other: "新保障"},
+		{name: "cleared", basics: Basics{Guarantees: []string{}}, want: "", other: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state := State{Basics: tc.basics, Material: Material{Guarantees: []string{"提供饮水"}, OtherGuarantee: "旧保障"}, Draft: &Basics{Guarantees: []string{"专项培训"}}}
+			normalizeGuarantees(&state)
+			got := strings.Join(state.Material.Guarantees, "、")
+			if got != tc.want || state.Material.OtherGuarantee != tc.other || strings.Join(state.Basics.Guarantees, "、") != tc.want {
+				t.Fatalf("guarantees: %+v", state)
+			}
+			if state.Draft.Guarantees[0] != "专项培训" {
+				t.Fatal("pending draft changed")
+			}
+		})
+	}
+}

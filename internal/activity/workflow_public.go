@@ -122,7 +122,10 @@ func (s *Service) publicForm(c *gin.Context) {
 		failWorkflow(c, errClosed)
 		return
 	}
-	errhandler.OK(c, gin.H{"project": p.Name, "form": form, "kind": kind, "sessions": state.Basics.Sessions})
+	errhandler.OK(c, gin.H{
+		"project": p.Name, "form": form, "kind": kind, "sessions": state.Basics.Sessions,
+		"guarantees": state.Basics.Guarantees, "other_guarantee": state.Basics.OtherGuarantee,
+	})
 }
 
 func (s *Service) submitPublicForm(c *gin.Context) {

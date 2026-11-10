@@ -133,6 +133,7 @@ func (s *Service) updateBasics(c *gin.Context) {
 		if !basicsValid(req.Basics) {
 			return "", errInvalid
 		}
+		inheritGuarantees(&req.Basics, state.Basics)
 		state.Basics = req.Basics
 		applyBasics(p, req.Basics)
 		return "", nil
@@ -155,6 +156,7 @@ func (s *Service) requestChange(c *gin.Context) {
 		if !basicsValid(req.Basics) || len([]rune(strings.TrimSpace(req.Reason))) < 2 || len([]rune(req.Reason)) > 300 {
 			return "", errInvalid
 		}
+		inheritGuarantees(&req.Basics, state.Basics)
 		if sameBasics(req.Basics, state.Basics) {
 			return "", errBasicsUnchanged
 		}
@@ -166,6 +168,8 @@ func (s *Service) requestChange(c *gin.Context) {
 
 func sameBasics(a, b Basics) bool {
 	canonical := func(value Basics) Basics {
+		value.Guarantees = append([]string{}, value.Guarantees...)
+		slices.Sort(value.Guarantees)
 		value.Sessions = slices.Clone(value.Sessions)
 		for i := range value.Sessions {
 			for _, field := range []*string{&value.Sessions[i].Start, &value.Sessions[i].End} {

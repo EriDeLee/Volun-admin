@@ -135,6 +135,7 @@ func checkbox(cell *etree.Element, selected map[int]bool) error {
 }
 
 func fillAttachment(state State) ([]byte, error) {
+	normalizeGuarantees(&state)
 	sum := sha256.Sum256(attachmentTemplate)
 	if !strings.EqualFold(hex.EncodeToString(sum[:]), templateChecksum) {
 		return nil, fmt.Errorf("material: unexpected template checksum")
@@ -369,6 +370,8 @@ func (s *Service) saveMaterial(c *gin.Context) {
 		if err := dataEditable(p, u); err != nil {
 			return "", err
 		}
+		req.Guarantees = append([]string{}, state.Basics.Guarantees...)
+		req.OtherGuarantee = state.Basics.OtherGuarantee
 		if !validMaterialOptions(req) || len([]rune(req.Description)) > 500 || req.MaxDailyHours != nil && (*req.MaxDailyHours < 0 || *req.MaxDailyHours > 24) {
 			return "", errInvalid
 		}

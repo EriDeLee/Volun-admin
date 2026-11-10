@@ -10,6 +10,8 @@ import (
 )
 
 type volunteerProject struct {
+	Guarantees      []string            `json:"guarantees"`
+	OtherGuarantee  string              `json:"other_guarantee"`
 	Project         dto.ProjectResponse `json:"project"`
 	FormID          string              `json:"form_id"`
 	Deadline        string              `json:"deadline"`
@@ -41,7 +43,11 @@ func (s *Service) VolunteerProjects(c *gin.Context) {
 			failWorkflow(c, err)
 			return
 		}
-		item := volunteerProject{Project: projectJSON(row.Project)}
+		normalizeGuarantees(&state)
+		item := volunteerProject{
+			Project:    projectJSON(row.Project),
+			Guarantees: state.Basics.Guarantees, OtherGuarantee: state.Basics.OtherGuarantee,
+		}
 		for _, m := range state.Members {
 			if state.Bindings[m.ID] != u.Sub {
 				continue
