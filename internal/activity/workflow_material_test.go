@@ -36,7 +36,7 @@ func TestMaterialDefaultsAndDocumentOptions(t *testing.T) {
 		t.Fatal("duplicate guarantee accepted")
 	}
 	hours := 4
-	state := State{Material: m, Basics: Basics{Name: "附件1选项测试", Location: "测试地点", Sessions: []Session{{Name: "上午", Start: "2026-11-13T08:00:00+08:00", End: "2026-11-13T12:00:00+08:00", Positions: []Position{{Name: "引导", Capacity: 10, Description: "负责现场引导", Hours: &hours}, {Name: "接待", Capacity: 2, Hours: &hours}}}}}}
+	state := State{Material: m, Basics: Basics{Name: "附件1选项测试", Location: "测试地点", Sessions: []Session{{Name: "跨日场次", Start: "2026-11-13T22:57:00+08:00", End: "2026-11-14T05:59:00+08:00", Positions: []Position{{Name: "引导", Capacity: 10, Description: "负责现场引导", Hours: &hours}, {Name: "接待", Capacity: 2, Hours: &hours}}}}}}
 	content, err := fillAttachment(state)
 	if err != nil {
 		t.Fatal(err)
@@ -66,6 +66,15 @@ func TestMaterialDefaultsAndDocumentOptions(t *testing.T) {
 		doc := etree.NewDocument()
 		if err := doc.ReadFromBytes(xml); err != nil {
 			t.Fatal(err)
+		}
+		var documentText strings.Builder
+		for _, value := range doc.Root().FindElements(".//w:t") {
+			documentText.WriteString(value.Text())
+		}
+		for _, unwanted := range []string{"22:57", "05:59", "拟录入"} {
+			if strings.Contains(documentText.String(), unwanted) {
+				t.Fatalf("document includes automatic session detail %q", unwanted)
+			}
 		}
 		rows := doc.Root().SelectElement("body").SelectElements("tbl")[0].SelectElements("tr")
 		positionRows := doc.Root().SelectElement("body").SelectElements("tbl")[1].SelectElements("tr")
