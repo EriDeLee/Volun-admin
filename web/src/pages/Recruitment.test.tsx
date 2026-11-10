@@ -2,11 +2,9 @@ import type { ComponentProps, ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import {
   cleanup,
-  fireEvent,
   render,
   screen,
   waitFor,
-  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import WorkflowPage from "./WorkflowPage.tsx";
@@ -162,112 +160,50 @@ test("approved changes cannot be submitted again without a new edit", async () =
   expect(submit.disabled).toBe(false);
 });
 
-test("viewing positions keeps the material draft and makes no new requests", async () => {
+test("attachment supplements cannot edit project sessions or guarantees", async () => {
   const data = initial();
-  data.capabilities.push("materials.write");
-  data.state.material = { ...data.state.material, guarantees: [] };
+  data.capabilities.push("materials.write", "basics.edit");
+  data.state.basics.guarantees = ["提供饮水"];
   vi.mocked(request).mockImplementation(async (path) =>
     path.endsWith("/history")
       ? ({ events: [], materials: [] } as never)
       : (data as never),
   );
   render(<WorkflowPage {...props} initialTab="materials" />);
-  const user = userEvent.setup();
-  await user.type(await screen.findByLabelText("服务对象"), "保留草稿");
-  const calls = vi.mocked(request).mock.calls.length;
-  await user.click(screen.getByRole("button", { name: "查看场次与岗位" }));
-  const details = screen.getByRole("region", { name: "场次与岗位详情" });
-  expect(within(details).getByText("上午")).toBeTruthy();
-  expect(within(details).getByText("引导")).toBeTruthy();
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(
-    screen
-      .getByRole("button", { name: "收起场次与岗位" })
-      .getAttribute("aria-expanded"),
-  ).toBe("true");
-  await user.click(screen.getByRole("button", { name: "收起场次与岗位" }));
-  expect(screen.queryByRole("region", { name: "场次与岗位详情" })).toBeNull();
-  expect((screen.getByLabelText("服务对象") as HTMLInputElement).value).toBe(
-    "保留草稿",
-  );
-  expect(vi.mocked(request)).toHaveBeenCalledTimes(calls);
-  expect(props.onNavigate).not.toHaveBeenCalled();
+  await screen.findByLabelText("服务对象");
+  expect(screen.queryByRole("button", { name: "增加场次" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "编辑" })).toBeNull();
+  expect(screen.queryByRole("checkbox", { name: "提供饮水" })).toBeNull();
+  expect(screen.getByText("提供饮水")).toBeTruthy();
 });
 
-test("inline positions can be edited and submitted without losing the material draft", async () => {
+test("project guarantees are submitted with the approval change", async () => {
   const data = initial();
-  data.capabilities.push("materials.write", "basics.edit");
-  data.state.material = { ...data.state.material, guarantees: [] };
-  vi.mocked(request).mockImplementation(async (path, body) => {
-    if (path.endsWith("/history"))
-      return { events: [], materials: [] } as never;
-    if (path.endsWith("/changes")) {
-      const change = body as { basics: Workflow["state"]["basics"] };
-      return {
-        ...data,
-        version: 2,
-        state: { ...data.state, draft: change.basics },
-      } as never;
-    }
-    return data as never;
-  });
-  render(<WorkflowPage {...props} initialTab="materials" />);
-  const user = userEvent.setup();
-  await user.type(await screen.findByLabelText("服务对象"), "保留草稿");
-  await user.click(screen.getByRole("button", { name: "查看场次与岗位" }));
-  const details = screen.getByRole("region", { name: "场次与岗位详情" });
-  await user.click(within(details).getAllByRole("button", { name: "编辑" })[0]);
-  await user.type(within(details).getByLabelText("岗位1说明"), "负责入口引导");
-  await user.click(within(details).getByRole("button", { name: "完成" }));
-  await user.click(within(details).getByRole("button", { name: "增加场次" }));
-  expect(within(details).getAllByLabelText("场次名称")).toHaveLength(3);
-  await user.click(within(details).getByRole("button", { name: "移除场次3" }));
-  expect(within(details).getAllByLabelText("场次名称")).toHaveLength(2);
-  await user.click(within(details).getByRole("button", { name: "增加场次" }));
-  await user.type(within(details).getAllByLabelText("场次名称")[2], "新增场次");
-  fireEvent.change(within(details).getAllByLabelText("开始时间")[2], {
-    target: { value: "2026-11-09T13:00" },
-  });
-  fireEvent.change(within(details).getAllByLabelText("结束时间")[2], {
-    target: { value: "2026-11-09T15:00" },
-  });
-  const addedSession = within(details)
-    .getByRole("heading", { name: "新增场次" })
-    .closest("section")!;
-  await user.type(within(addedSession).getByLabelText("岗位1名称"), "接待");
-  await user.click(within(addedSession).getByRole("button", { name: "完成" }));
-  await user.type(within(details).getByLabelText("变更原因"), "补充岗位说明");
-  await user.click(
-    within(details).getByRole("button", { name: "提交变更申请" }),
+  data.capabilities.push("basics.edit");
+  vi.mocked(request).mockImplementation(async (path) =>
+    path.endsWith("/history")
+      ? ({ events: [], materials: [] } as never)
+      : (data as never),
   );
+  render(<WorkflowPage {...props} initialTab="overview" />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("checkbox", { name: "提供饮水" }));
+  await user.type(screen.getByLabelText("其他保障"), "接送服务");
+  await user.type(screen.getByLabelText("变更原因"), "补充保障信息");
+  await user.click(screen.getByRole("button", { name: "提交变更申请" }));
   await waitFor(() =>
     expect(request).toHaveBeenCalledWith(
       "/activity/projects/p/changes",
       expect.objectContaining({
         basics: expect.objectContaining({
-          sessions: expect.arrayContaining([
-            expect.objectContaining({
-              positions: [
-                expect.objectContaining({ description: "负责入口引导" }),
-              ],
-            }),
-            expect.objectContaining({
-              name: "新增场次",
-              positions: [expect.objectContaining({ name: "接待" })],
-            }),
-          ]),
+          guarantees: ["提供饮水"],
+          other_guarantee: "接送服务",
         }),
-        reason: "补充岗位说明",
       }),
       "POST",
       1,
     ),
   );
-  expect((screen.getByLabelText("服务对象") as HTMLInputElement).value).toBe(
-    "保留草稿",
-  );
-  expect(screen.getByRole("region", { name: "场次与岗位详情" })).toBeTruthy();
-  expect(props.onNavigate).not.toHaveBeenCalled();
 });
 
 test("member deletion requires confirmation and refreshes the roster", async () => {
@@ -497,6 +433,8 @@ test("fixed public questionnaire submits multiple choices and notes", async () =
       return {
         project: "测试项目",
         kind: "recruit",
+        guarantees: ["提供饮水"],
+        other_guarantee: "往返接送",
         form: initial().state.form,
         sessions,
       } as never;
@@ -512,6 +450,7 @@ test("fixed public questionnaire submits multiple choices and notes", async () =
     await screen.findByRole("button", { name: "手动填写" }),
   );
   await screen.findByRole("textbox", { name: "姓名" });
+  expect(screen.getByText("提供饮水、往返接送")).toBeTruthy();
   expect(screen.queryByRole("textbox", { name: "部门" })).toBeNull();
   await userEvent.type(
     screen.getByRole("textbox", { name: "姓名" }),

@@ -3,6 +3,10 @@ import type { ProjectPageProps } from "../types.ts";
 import WorkspaceShell from "../components/WorkspaceShell.tsx";
 import AssignmentPicker from "../components/AssignmentPicker.tsx";
 import ProjectAccountPicker from "../components/ProjectAccountPicker.tsx";
+import {
+  VolunteerGuaranteesEditor,
+  VolunteerGuarantees,
+} from "../components/VolunteerGuarantees.tsx";
 import PositionList from "../components/PositionList.tsx";
 import AttachmentMaterialFields from "../components/AttachmentMaterialFields.tsx";
 import AttachmentPreview from "../components/AttachmentPreview.tsx";
@@ -78,7 +82,6 @@ export default function WorkflowPage(
   const [member, setMember] = useState<Member>(emptyMember),
     [paste, setPaste] = useState("");
   const [reason, setReason] = useState("");
-  const [showPositions, setShowPositions] = useState(false);
   const [previewFile, setPreviewFile] = useState<
     History["materials"][number] | null
   >(null);
@@ -631,6 +634,10 @@ export default function WorkflowPage(
                         </label>
                       ))}
                     </div>
+                    <VolunteerGuaranteesEditor
+                      value={basics}
+                      onChange={setBasics}
+                    />
                     <h3>场次与岗位</h3>
                     <p className="workflow-note">
                       项目日期按北京时间计算，包含开始日00:00至结束日全天。场次起止时间须在此范围内。
@@ -796,6 +803,7 @@ export default function WorkflowPage(
                           {app.basics.location}
                         </p>
                         <p>项目说明：{app.basics.description || "未填写"}</p>
+                        <VolunteerGuarantees value={app.basics} />
                         {app.basics.sessions.map((s) => (
                           <div key={s.id}>
                             <p>
@@ -1776,252 +1784,6 @@ export default function WorkflowPage(
                       value={material}
                       basics={data.state.basics}
                       onChange={setMaterial}
-                      onEditPositions={() =>
-                        setShowPositions((shown) => !shown)
-                      }
-                      positionsExpanded={showPositions}
-                      positionDetails={
-                        basics && (
-                          <section aria-label="场次与岗位详情">
-                            <fieldset
-                              disabled={
-                                busy ||
-                                !can("basics.edit") ||
-                                data.approval === "pending" ||
-                                !!data.state.draft
-                              }
-                            >
-                              {basics.sessions.length ? (
-                                basics.sessions.map((session, index) => (
-                                  <section
-                                    className="workflow-session"
-                                    key={session.id}
-                                  >
-                                    <h3>{session.name || "未命名场次"}</h3>
-                                    {can("basics.edit") ? (
-                                      <div className="workflow-grid">
-                                        <label>
-                                          场次名称
-                                          <input
-                                            required
-                                            value={session.name}
-                                            onChange={(e) =>
-                                              editSession(
-                                                index,
-                                                "name",
-                                                e.target.value,
-                                              )
-                                            }
-                                          />
-                                        </label>
-                                        <label>
-                                          开始时间
-                                          <input
-                                            type="datetime-local"
-                                            required
-                                            value={localTime(session.start)}
-                                            onChange={(e) =>
-                                              editSession(
-                                                index,
-                                                "start",
-                                                iso(e.target.value),
-                                              )
-                                            }
-                                          />
-                                        </label>
-                                        <label>
-                                          结束时间
-                                          <input
-                                            type="datetime-local"
-                                            required
-                                            value={localTime(session.end)}
-                                            onChange={(e) =>
-                                              editSession(
-                                                index,
-                                                "end",
-                                                iso(e.target.value),
-                                              )
-                                            }
-                                          />
-                                        </label>
-                                      </div>
-                                    ) : (
-                                      <p>
-                                        {localTime(session.start).replace(
-                                          "T",
-                                          " ",
-                                        )}{" "}
-                                        至{" "}
-                                        {localTime(session.end).replace(
-                                          "T",
-                                          " ",
-                                        )}
-                                      </p>
-                                    )}
-                                    {can("basics.edit") ? (
-                                      <PositionList
-                                        positions={session.positions}
-                                        onChange={(positions) =>
-                                          editSession(
-                                            index,
-                                            "positions",
-                                            positions,
-                                          )
-                                        }
-                                      />
-                                    ) : (
-                                      <div className="activity-table-wrap">
-                                        <table className="activity-table">
-                                          <thead>
-                                            <tr>
-                                              <th scope="col">岗位</th>
-                                              <th scope="col">招募人数</th>
-                                              <th scope="col">拟计时长</th>
-                                              <th scope="col">说明</th>
-                                            </tr>
-                                          </thead>
-                                          <tbody>
-                                            {session.positions.map(
-                                              (position) => (
-                                                <tr key={position.id}>
-                                                  <td>
-                                                    {position.name ||
-                                                      "未命名岗位"}
-                                                  </td>
-                                                  <td>
-                                                    {position.capacity} 人
-                                                  </td>
-                                                  <td>
-                                                    {position.hours == null
-                                                      ? "未填写"
-                                                      : `${position.hours} 小时`}
-                                                  </td>
-                                                  <td
-                                                    style={{
-                                                      whiteSpace: "pre-wrap",
-                                                    }}
-                                                  >
-                                                    {position.description ||
-                                                      "—"}
-                                                  </td>
-                                                </tr>
-                                              ),
-                                            )}
-                                          </tbody>
-                                        </table>
-                                      </div>
-                                    )}
-                                    {!session.positions.length && (
-                                      <p>暂无岗位。</p>
-                                    )}
-                                    {can("basics.edit") && (
-                                      <div className="activity-actions">
-                                        <button
-                                          type="button"
-                                          className="button secondary"
-                                          aria-label={`移除场次${index + 1}`}
-                                          onClick={() =>
-                                            setBasics({
-                                              ...basics,
-                                              sessions: basics.sessions.filter(
-                                                (_, i) => i !== index,
-                                              ),
-                                            })
-                                          }
-                                        >
-                                          移除场次
-                                        </button>
-                                      </div>
-                                    )}
-                                  </section>
-                                ))
-                              ) : (
-                                <p>暂无场次与岗位。</p>
-                              )}
-                              {can("basics.edit") && (
-                                <>
-                                  <button
-                                    type="button"
-                                    className="button secondary"
-                                    onClick={() =>
-                                      setBasics({
-                                        ...basics,
-                                        sessions: [
-                                          ...basics.sessions,
-                                          {
-                                            id: crypto.randomUUID(),
-                                            name: "",
-                                            start: "",
-                                            end: "",
-                                            positions: [
-                                              {
-                                                id: crypto.randomUUID(),
-                                                name: "",
-                                                capacity: 1,
-                                                hours: null,
-                                                description: "",
-                                              },
-                                            ],
-                                          },
-                                        ],
-                                      })
-                                    }
-                                  >
-                                    增加场次
-                                  </button>
-                                  {data.approval === "approved" && (
-                                    <label>
-                                      变更原因
-                                      <input
-                                        value={reason}
-                                        onChange={(e) =>
-                                          setReason(e.target.value)
-                                        }
-                                      />
-                                    </label>
-                                  )}
-                                  <button
-                                    type="button"
-                                    className="button primary"
-                                    disabled={
-                                      basicsSnapshot(basics) ===
-                                      basicsSnapshot(data.state.basics)
-                                    }
-                                    onClick={(e) => {
-                                      if (
-                                        data.approval === "approved" &&
-                                        reason.trim().length < 2
-                                      ) {
-                                        setError(
-                                          "请填写至少两个字的变更原因。",
-                                        );
-                                        return;
-                                      }
-                                      const fields =
-                                        e.currentTarget.closest("fieldset");
-                                      for (const input of fields?.querySelectorAll(
-                                        "input, textarea",
-                                      ) || []) {
-                                        if (
-                                          !(
-                                            input as HTMLInputElement
-                                          ).reportValidity()
-                                        )
-                                          return;
-                                      }
-                                      saveBasics(e);
-                                    }}
-                                  >
-                                    {data.approval === "approved"
-                                      ? "提交变更申请"
-                                      : "保存场次与岗位"}
-                                  </button>
-                                </>
-                              )}
-                            </fieldset>
-                          </section>
-                        )
-                      }
                     />
                     <button className="button primary" disabled={busy}>
                       保存材料草稿

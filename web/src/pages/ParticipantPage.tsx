@@ -1,3 +1,4 @@
+import { VolunteerGuarantees } from "../components/VolunteerGuarantees.tsx";
 import { useEffect, useState } from "react";
 import { Brand } from "../components/WorkspaceShell.tsx";
 import {
@@ -35,6 +36,8 @@ export default function ParticipantPage() {
   const [form, setForm] = useState<{
     project: string;
     form: PublishedForm;
+    guarantees?: string[];
+    other_guarantee?: string;
     kind: string;
     sessions: ServiceSession[];
   } | null>(null);
@@ -198,6 +201,7 @@ export default function ParticipantPage() {
                   : "使用学校账号或专属报名凭证访问本人记录。")}
         </p>
       </header>
+      {form && <VolunteerGuarantees value={form} />}
       {error && (
         <p className="error" role="alert">
           {error}

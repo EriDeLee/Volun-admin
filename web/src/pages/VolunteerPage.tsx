@@ -1,3 +1,4 @@
+import { VolunteerGuarantees } from "../components/VolunteerGuarantees.tsx";
 import { useEffect, useState } from "react";
 import type { Project, WorkspaceProps } from "../types.ts";
 import WorkspaceShell from "../components/WorkspaceShell.tsx";
@@ -7,6 +8,8 @@ import { profileComplete } from "../lib/profile.ts";
 import "./volunteer.css";
 
 export interface VolunteerProject {
+  guarantees?: string[];
+  other_guarantee?: string;
   project: Project;
   form_id: string;
   deadline: string;
@@ -163,6 +166,7 @@ export default function VolunteerPage(
               <p>
                 {item.project.description || "服务内容以报名页公布的安排为准。"}
               </p>
+              <VolunteerGuarantees value={item} />
               <dl>
                 <div>
                   <dt>服务日期</dt>

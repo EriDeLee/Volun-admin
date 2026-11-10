@@ -34,6 +34,8 @@ test("incomplete profile returns through personal information before signing up"
       {
         project,
         form_id: "f1",
+        guarantees: ["提供饮水"],
+        other_guarantee: "往返接送",
         registered: false,
         participated: false,
         recognized_hours: null,
@@ -45,6 +47,7 @@ test("incomplete profile returns through personal information before signing up"
   await userEvent.click(
     await screen.findByRole("button", { name: "完善资料后报名" }),
   );
+  expect(screen.getByText("提供饮水、往返接送")).toBeTruthy();
   expect(p.onNavigate).toHaveBeenCalledWith("/profile");
   expect(sessionStorage.getItem("volunteer_return")).toBe(
     "/signup?project=p1&form=f1",

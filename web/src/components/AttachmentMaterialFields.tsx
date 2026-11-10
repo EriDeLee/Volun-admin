@@ -1,39 +1,17 @@
-import type { ReactNode } from "react";
-import { useId } from "react";
+import { VolunteerGuarantees } from "./VolunteerGuarantees.tsx";
 import type { Basics, Material } from "../lib/workflow.ts";
 
 export const checkinRules = ["定位打卡", "扫动态码", "定位扫码"];
 export const recruitments = ["免审密码招募", "公开招募", "定向招募"];
-export const guarantees = [
-  "志愿者保险",
-  "集中乘车",
-  "交通补贴",
-  "餐饮或食物",
-  "提供饮水",
-  "提供住宿",
-  "志愿者服装",
-  "志愿服务工具",
-  "免费体检",
-  "专项培训",
-  "志愿服务证书",
-];
-
 export default function AttachmentMaterialFields({
   value,
   basics,
   onChange,
-  onEditPositions,
-  positionsExpanded = false,
-  positionDetails,
 }: {
   value: Material;
   basics: Basics;
   onChange: (value: Material) => void;
-  onEditPositions: () => void;
-  positionsExpanded?: boolean;
-  positionDetails?: ReactNode;
 }) {
-  const positionDetailsID = useId();
   const update = (key: keyof Material, next: unknown) =>
     onChange({ ...value, [key]: next });
   const input = (
@@ -128,7 +106,7 @@ export default function AttachmentMaterialFields({
         </div>
       </fieldset>
       <fieldset className="material-section">
-        <legend>招募与保障</legend>
+        <legend>附件招募信息与立项保障</legend>
         <div className="workflow-grid">
           <label>
             志愿者招募范围
@@ -161,29 +139,8 @@ export default function AttachmentMaterialFields({
             />
           </label>
         </div>
-        <fieldset className="material-guarantees">
-          <legend>志愿者保障（可多选）</legend>
-          <div className="material-option-grid">
-            {guarantees.map((option) => (
-              <label key={option}>
-                <input
-                  type="checkbox"
-                  checked={(value.guarantees || []).includes(option)}
-                  onChange={(event) =>
-                    update(
-                      "guarantees",
-                      event.target.checked
-                        ? [...(value.guarantees || []), option]
-                        : value.guarantees.filter((item) => item !== option),
-                    )
-                  }
-                />
-                {option}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-        {input("other_guarantee", "其他保障")}
+        <p>志愿者保障由立项信息统一维护，附件1自动使用已审批的内容。</p>
+        <VolunteerGuarantees value={basics} />
       </fieldset>
       <fieldset className="material-section">
         <legend>岗位设置</legend>
@@ -201,18 +158,7 @@ export default function AttachmentMaterialFields({
         {!basics.sessions.some((session) => session.positions.length) && (
           <p>尚未设置岗位，请先完善立项中的场次与岗位。</p>
         )}
-        <button
-          type="button"
-          className="button secondary"
-          onClick={onEditPositions}
-          aria-expanded={positionsExpanded}
-          aria-controls={positionDetailsID}
-        >
-          {positionsExpanded ? "收起场次与岗位" : "查看场次与岗位"}
-        </button>
-        <div id={positionDetailsID} hidden={!positionsExpanded}>
-          {positionsExpanded && positionDetails}
-        </div>
+        <p>场次与岗位仅在立项中编辑，此处用于核对附件内容。</p>
       </fieldset>
       <fieldset className="material-section">
         <legend>联系人与附件补充</legend>

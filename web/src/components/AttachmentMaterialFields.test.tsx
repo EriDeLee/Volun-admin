@@ -5,7 +5,6 @@ import userEvent from "@testing-library/user-event";
 import AttachmentMaterialFields, {
   checkinRules,
   recruitments,
-  guarantees,
 } from "./AttachmentMaterialFields.tsx";
 import type { Basics, Material } from "../lib/workflow.ts";
 
@@ -34,7 +33,6 @@ test("attachment1 offers reference options and fixed contacts", async () => {
           setValue(next);
           changed(next);
         }}
-        onEditPositions={vi.fn()}
       />
     );
   }
@@ -46,7 +44,7 @@ test("attachment1 offers reference options and fixed contacts", async () => {
   expect(
     screen.getByRole<HTMLInputElement>("textbox", { name: "联系人姓名" }).value,
   ).toBe("环境联系人");
-  expect(screen.getAllByRole("checkbox")).toHaveLength(guarantees.length);
+  expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
   const user = userEvent.setup();
   for (const rule of checkinRules)
     await user.selectOptions(
@@ -58,12 +56,10 @@ test("attachment1 offers reference options and fixed contacts", async () => {
       screen.getByRole("combobox", { name: "志愿者招募范围" }),
       option,
     );
-  await user.click(screen.getByRole("checkbox", { name: "提供饮水" }));
-  await user.click(screen.getByRole("checkbox", { name: "专项培训" }));
   expect(changed.mock.lastCall?.[0]).toMatchObject({
     checkin_rule: "定位扫码",
     recruitment: "定向招募",
-    guarantees: ["提供饮水", "专项培训"],
+    guarantees: [],
   });
   expect(screen.getByLabelText("免审密码").hasAttribute("disabled")).toBe(true);
   await user.selectOptions(

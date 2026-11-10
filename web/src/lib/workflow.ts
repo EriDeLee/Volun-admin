@@ -15,6 +15,8 @@ export interface ServiceSession {
   positions: Position[];
 }
 export interface Basics {
+  guarantees?: string[];
+  other_guarantee?: string;
   name: string;
   department: string;
   starts_on: string;
@@ -36,6 +38,8 @@ export const basicsSnapshot = (basics: Basics) => {
     basics.ends_on,
     basics.location,
     basics.description,
+    [...(basics.guarantees || [])].sort(),
+    basics.other_guarantee || "",
     basics.sessions.map((session) => [
       session.id,
       session.name,
