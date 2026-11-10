@@ -56,7 +56,8 @@ export default function Sidebar({
       ]
     : [];
   const personal = [
-    { path: "/signup", label: "公开问卷", icon: "file" },
+    { path: "/recruitment", label: "招募活动", icon: "heart" },
+    { path: "/my-services", label: "我的服务", icon: "clock" },
     { path: "/profile", label: "个人信息", icon: "user" },
   ];
   const links = (items: typeof personal) =>

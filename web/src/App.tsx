@@ -8,8 +8,9 @@ import ProjectsPage from "./pages/ProjectsPage.tsx";
 import ApprovalsPage from "./pages/ApprovalsPage.tsx";
 import ProjectDetail from "./pages/WorkflowPage.tsx";
 import ParticipantPage from "./pages/ParticipantPage.tsx";
-import SignupPage from "./pages/SignupPage.tsx";
 import PhoneBinding from "./components/PhoneBinding.tsx";
+import VolunteerPage from "./pages/VolunteerPage.tsx";
+import { profileComplete } from "./lib/profile.ts";
 import UsersPage from "./pages/UsersPage.tsx";
 import { DraftProvider } from "./lib/drafts.tsx";
 import { isManagerPath, canReadUsers } from "./lib/constants.ts";
@@ -26,7 +27,11 @@ const canManage = (data: AuthSession | null) =>
     ["super_admin", "activity_admin", "data_admin"].includes(g),
   );
 const homePath = (data: AuthSession) =>
-  canManage(data) ? "/activity" : "/profile";
+  canManage(data)
+    ? "/activity"
+    : profileComplete(data.user)
+      ? "/recruitment"
+      : "/profile";
 
 const groupNames: Record<string, string> = {
   super_admin: "超管",
@@ -109,11 +114,13 @@ function Application() {
           ? "/set-password"
           : location.pathname === "/profile"
             ? "/profile"
-            : canManage(data) && isManagerPath(location.pathname)
-              ? location.pathname + location.search
-              : canReadUsers(data) && location.pathname === "/users"
-                ? "/users"
-                : homePath(data),
+            : ["/recruitment", "/my-services"].includes(location.pathname)
+              ? location.pathname
+              : canManage(data) && isManagerPath(location.pathname)
+                ? location.pathname + location.search
+                : canReadUsers(data) && location.pathname === "/users"
+                  ? "/users"
+                  : homePath(data),
       );
       if (!initial) setNotice("个人信息已更新。");
     } catch (cause) {
@@ -132,7 +139,11 @@ function Application() {
     }
   };
   useEffect(() => {
-    if (location.pathname === "/signup") setChecking(false);
+    if (
+      location.pathname === "/signup" &&
+      new URLSearchParams(location.search).get("project")
+    )
+      setChecking(false);
     else loadSession(true);
   }, []);
   const login = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -257,15 +268,8 @@ function Application() {
     parentError: error,
     onSessionIssue,
   };
-  if (pathname === "/signup") {
-    const params = new URLSearchParams(routeSearch);
-    if (
-      params.get("project") &&
-      (params.has("form") || params.has("attendance") || !params.has("preview"))
-    )
-      return <ParticipantPage />;
-    return <SignupPage {...workspaceProps} search={routeSearch} />;
-  }
+  if (pathname === "/signup" && new URLSearchParams(routeSearch).get("project"))
+    return <ParticipantPage />;
   if (session?.password_setup_required)
     return (
       <main className="setup-page">
@@ -507,6 +511,15 @@ function Application() {
         </section>
       </main>
     );
+  if (pathname === "/recruitment" || pathname === "/my-services")
+    return (
+      <VolunteerPage
+        key={pathname}
+        {...workspaceProps}
+        session={session}
+        mine={pathname === "/my-services"}
+      />
+    );
   if (
     pathname !== "/profile" &&
     (canManage(session) || (pathname === "/users" && canReadUsers(session)))
@@ -611,7 +624,7 @@ function Application() {
                   返回活动工作台
                 </a>
               )}
-              <p>查看你的平台身份、用户组与登录状态。</p>
+              <p>报名前请确认姓名、学号 / 人员编号，并绑定本人手机号。</p>
             </div>
             <button
               className="button secondary"
@@ -632,6 +645,34 @@ function Application() {
               {notice}
             </p>
           )}
+          <section className="workspace-info" aria-label="报名资料完整度">
+            <div>
+              <strong>
+                {profileComplete(user) ? "报名资料已完善" : "报名资料待完善"}
+              </strong>
+              <p>
+                {profileComplete(user)
+                  ? "姓名、学号和手机号已齐全，可以报名志愿服务。"
+                  : "请先绑定手机号；姓名或学号缺失时，请联系管理员核实补全。"}
+              </p>
+            </div>
+            {profileComplete(user) && (
+              <button
+                className="button primary"
+                onClick={() => {
+                  const target = sessionStorage.getItem("volunteer_return");
+                  sessionStorage.removeItem("volunteer_return");
+                  navigate(
+                    target?.startsWith("/signup?project=")
+                      ? target
+                      : "/recruitment",
+                  );
+                }}
+              >
+                继续报名
+              </button>
+            )}
+          </section>
           <section className="identity-banner">
             <span className="avatar large">{name.slice(0, 1)}</span>
             <div>

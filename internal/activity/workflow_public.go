@@ -144,6 +144,10 @@ func (s *Service) submitPublicForm(c *gin.Context) {
 	u := actor(c)
 	// Authenticated identity comes exclusively from the server-side account.
 	if u.Sub != "" {
+		if strings.TrimSpace(u.Name) == "" || strings.TrimSpace(u.ID) == "" || u.Phone == "" {
+			errhandler.Fail(c, errhandler.InvalidArgument)
+			return
+		}
 		req.Member.Name = u.Name
 		req.Member.Number = u.ID
 		if u.Phone != "" {

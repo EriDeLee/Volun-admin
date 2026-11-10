@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useId, useState } from "react";
+import "./PhoneBinding.css";
 import type { AuthSession } from "../types.ts";
 import { request } from "../lib/workflow.ts";
 
@@ -9,13 +10,14 @@ export default function PhoneBinding({
   phone?: string;
   onBound: (session: AuthSession) => void;
 }) {
+  const hintID = useId();
   const [value, setValue] = useState(phone || "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   return (
     <form
-      className="workflow-form"
+      className="phone-binding"
       onSubmit={async (event) => {
         event.preventDefault();
         if (busy) return;
@@ -43,6 +45,8 @@ export default function PhoneBinding({
         <input
           required
           type="tel"
+          inputMode="tel"
+          aria-describedby={hintID}
           autoComplete="tel"
           maxLength={20}
           value={value}
@@ -51,7 +55,9 @@ export default function PhoneBinding({
           placeholder="11位手机号"
         />
       </label>
-      <p>一个手机号只能绑定一个账号。</p>
+      <p className="phone-binding-hint" id={hintID}>
+        一个手机号只能绑定一个账号。
+      </p>
       {error && (
         <p className="error" role="alert">
           {error}

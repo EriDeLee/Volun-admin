@@ -449,7 +449,7 @@ test("an account without a phone binds it before registration", async () => {
     throw new Error("未报名");
   });
   render(<ParticipantPage />);
-  await screen.findByRole("heading", { name: "绑定报名手机号" });
+  await screen.findByRole("heading", { name: "完善报名资料" });
   expect(screen.queryByRole("button", { name: "提交报名" })).toBeNull();
   await userEvent.type(screen.getByLabelText("绑定手机号"), phone);
   await userEvent.click(screen.getByRole("button", { name: "绑定手机号" }));

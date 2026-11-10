@@ -1,4 +1,5 @@
 import type { AuthSession } from "../types.ts";
+import { profileComplete } from "./profile.ts";
 export const groupNames: Record<string, string> = {
   super_admin: "超管",
   data_admin: "数据管理员",
@@ -42,7 +43,11 @@ export const canManage = (data: AuthSession | null) =>
   );
 
 export const homePath = (data: AuthSession | null) =>
-  canManage(data) ? "/activity" : "/profile";
+  canManage(data)
+    ? "/activity"
+    : data && profileComplete(data.user)
+      ? "/recruitment"
+      : "/profile";
 
 export const managerPaths = [
   "/activity",

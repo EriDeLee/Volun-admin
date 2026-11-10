@@ -79,6 +79,7 @@ func NewRouter(db Pinger, log *slog.Logger, authService *auth.Service) *gin.Engi
 		ContactMobile: defaults.ContactMobile, ContactEmail: defaults.ContactEmail, Notes: defaults.Notes, Training: defaults.Training,
 	}}
 	activityRoutes := api.Group("/activity", authService.Middleware(), activity.RequireManager)
+	api.GET("/volunteer/projects", authService.Middleware(), activityService.VolunteerProjects)
 	activityRoutes.GET("/dashboard", activityService.Dashboard)
 	activityRoutes.GET("/approvals", activityService.ListApprovals)
 	activityRoutes.GET("/projects", activityService.ListProjects)

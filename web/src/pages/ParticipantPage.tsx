@@ -8,6 +8,7 @@ import {
 import AssignmentPicker from "../components/AssignmentPicker.tsx";
 import ThemeSelect from "../components/ThemeSelect.tsx";
 import PhoneBinding from "../components/PhoneBinding.tsx";
+import { profileComplete } from "../lib/profile.ts";
 import type { AuthSession } from "../types.ts";
 import type {
   Member,
@@ -178,6 +179,9 @@ export default function ParticipantPage() {
               : "项目登记"}
         </span>
         <ThemeSelect />
+        <a className="button secondary" href="/my-services">
+          我的服务
+        </a>
       </div>
       <header className="public-header">
         <h1>
@@ -302,10 +306,24 @@ export default function ParticipantPage() {
         {form?.kind === "recruit" &&
           !own &&
           identity &&
-          !identity.user.phone && (
+          !profileComplete(identity.user) && (
             <article className="workflow-session">
-              <h2>绑定报名手机号</h2>
-              <p>首次报名请补充手机号，之后会自动填入。</p>
+              <h2>完善报名资料</h2>
+              <p>
+                报名前需要姓名、学号和绑定手机号。姓名或学号缺失请联系管理员补全。
+              </p>
+              <a
+                className="button secondary"
+                href="/profile"
+                onClick={() =>
+                  sessionStorage.setItem(
+                    "volunteer_return",
+                    location.pathname + location.search,
+                  )
+                }
+              >
+                前往个人信息
+              </a>
               <PhoneBinding
                 onBound={(authenticated) => {
                   setIdentity(authenticated);
@@ -416,7 +434,9 @@ export default function ParticipantPage() {
           </article>
         )}
         {form?.kind === "recruit" &&
-          (own || (identity && identity.user.phone) || entry === "manual") && (
+          (own ||
+            (identity && profileComplete(identity.user)) ||
+            (!identity && entry === "manual")) && (
             <form
               className="workflow-form"
               onSubmit={(e) => {
