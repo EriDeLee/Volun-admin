@@ -26,6 +26,32 @@ tags:
   - name: WorkflowPublic
     description: 公开问卷及本人凭证访问，不授予后台权限；限流120次每分钟，拒绝缓存。
 paths:
+  /api/v1/volunteer/projects:
+    get:
+      tags: [Activity]
+      operationId: listVolunteerProjects
+      summary: 招募平台与我的服务项目
+      security: [{sessionCookie: []}]
+      description: 返回已发布招募或本人已报名的项目。保障信息使用已审批立项内容，不包含待审变更。
+      responses:
+        '200':
+          description: 可访问的项目与志愿者保障
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          items:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/VolunteerProject'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/v1/auth/login:
     post:
       tags: [Auth]
@@ -1962,10 +1988,32 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
   schemas:
+    VolunteerProject:
+      type: object
+      properties:
+        project: {$ref: '#/components/schemas/Project'}
+        form_id: {type: string}
+        deadline: {type: string}
+        registered: {type: boolean}
+        participated: {type: boolean}
+        recognized_hours: {type: integer, nullable: true}
+        guarantees:
+          type: array
+          items: {type: string}
+          description: 已审批立项保障选项。
+        other_guarantee: {type: string}
     WorkflowBasics:
       type: object
       additionalProperties: false
       properties:
+        guarantees:
+          type: array
+          uniqueItems: true
+          items: {type: string, enum: [志愿者保险, 集中乘车, 交通补贴, 餐饮或食物, 提供饮水, 提供住宿, 志愿者服装, 志愿服务工具, 免费体检, 专项培训, 志愿服务证书, 其他]}
+          description: 立项审批通过的志愿者保障；修改须走基础信息保存或变更申请流程。
+        other_guarantee:
+          type: string
+          maxLength: 2000
         name:
           type: string
         department:
@@ -2243,10 +2291,13 @@ components:
         password:
           type: string
         guarantees:
+          readOnly: true
+          description: 兼容字段，由已审批立项信息同步；材料保存时不允许覆盖。
           type: array
           items:
             type: string
         other_guarantee:
+          readOnly: true
           type: string
         description:
           type: string
@@ -2490,6 +2541,14 @@ components:
       type: object
       additionalProperties: false
       properties:
+        guarantees:
+          type: array
+          uniqueItems: true
+          items: {type: string, enum: [志愿者保险, 集中乘车, 交通补贴, 餐饮或食物, 提供饮水, 提供住宿, 志愿者服装, 志愿服务工具, 免费体检, 专项培训, 志愿服务证书, 其他]}
+          description: 立项审批通过的志愿者保障；修改须走基础信息保存或变更申请流程。
+        other_guarantee:
+          type: string
+          maxLength: 2000
         project:
           type: string
         kind:
