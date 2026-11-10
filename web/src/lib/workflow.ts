@@ -23,6 +23,34 @@ export interface Basics {
   description: string;
   sessions: ServiceSession[];
 }
+
+export const basicsSnapshot = (basics: Basics) => {
+  const instant = (value: string) => {
+    const time = Date.parse(value);
+    return Number.isFinite(time) ? new Date(time).toISOString() : value;
+  };
+  return JSON.stringify([
+    basics.name,
+    basics.department,
+    basics.starts_on,
+    basics.ends_on,
+    basics.location,
+    basics.description,
+    basics.sessions.map((session) => [
+      session.id,
+      session.name,
+      instant(session.start),
+      instant(session.end),
+      session.positions.map((position) => [
+        position.id,
+        position.name,
+        position.capacity,
+        position.description,
+        position.hours ?? null,
+      ]),
+    ]),
+  ]);
+};
 export interface Assignment {
   session_id: string;
   position_id: string;

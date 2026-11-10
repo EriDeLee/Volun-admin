@@ -12,6 +12,7 @@ const (
 	ProjectLocked         Code = 300002
 	HoursNotReady         Code = 300003
 	MemberHasRecords      Code = 300004
+	BasicsUnchanged       Code = 300005
 	InvalidArgument       Code = 100001
 	ResourceNotFound      Code = 100002
 	MethodNotAllowed      Code = 100006
@@ -38,6 +39,8 @@ func (code Code) details() (int, string) {
 		return http.StatusConflict, "请先确认准备完成，并在首个场次结束后登记时长"
 	case MemberHasRecords:
 		return http.StatusConflict, "该成员已有出勤或时长记录，不能删除"
+	case BasicsUnchanged:
+		return http.StatusBadRequest, "项目基础信息未发生变化，请修改后再提交变更申请"
 	case InvalidArgument:
 		return http.StatusBadRequest, "参数不合法"
 	case ResourceNotFound:

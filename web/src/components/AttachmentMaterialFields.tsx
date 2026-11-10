@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+import { useId } from "react";
 import type { Basics, Material } from "../lib/workflow.ts";
 
 export const checkinRules = ["定位打卡", "扫动态码", "定位扫码"];
@@ -21,12 +23,17 @@ export default function AttachmentMaterialFields({
   basics,
   onChange,
   onEditPositions,
+  positionsExpanded = false,
+  positionDetails,
 }: {
   value: Material;
   basics: Basics;
   onChange: (value: Material) => void;
   onEditPositions: () => void;
+  positionsExpanded?: boolean;
+  positionDetails?: ReactNode;
 }) {
+  const positionDetailsID = useId();
   const update = (key: keyof Material, next: unknown) =>
     onChange({ ...value, [key]: next });
   const input = (
@@ -180,7 +187,9 @@ export default function AttachmentMaterialFields({
       </fieldset>
       <fieldset className="material-section">
         <legend>岗位设置</legend>
-        <p>岗位名称、人数、工作时间和拟录入时长将写入附件1。</p>
+        <p>
+          岗位名称、人数和填写的岗位描述将写入附件1，描述不自动追加工作时间或拟录入时长。
+        </p>
         {basics.sessions.flatMap((session) =>
           session.positions.map((position) => (
             <p key={`${session.id}:${position.id}`}>
@@ -196,9 +205,14 @@ export default function AttachmentMaterialFields({
           type="button"
           className="button secondary"
           onClick={onEditPositions}
+          aria-expanded={positionsExpanded}
+          aria-controls={positionDetailsID}
         >
-          查看场次与岗位
+          {positionsExpanded ? "收起场次与岗位" : "查看场次与岗位"}
         </button>
+        <div id={positionDetailsID} hidden={!positionsExpanded}>
+          {positionsExpanded && positionDetails}
+        </div>
       </fieldset>
       <fieldset className="material-section">
         <legend>联系人与附件补充</legend>

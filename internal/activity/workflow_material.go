@@ -262,14 +262,7 @@ func fillAttachment(state State) ([]byte, error) {
 			if len(cells) != 5 {
 				return nil, errInvalid
 			}
-			hours := ""
-			if position.Hours != nil {
-				hours = fmt.Sprintf("拟录入%d小时", *position.Hours)
-			}
-			start, _ := time.Parse(time.RFC3339, session.Start)
-			end, _ := time.Parse(time.RFC3339, session.End)
-			period := start.In(projectTimezone).Format("2006-01-02 15:04") + " 至 " + end.In(projectTimezone).Format("2006-01-02 15:04")
-			for i, value := range []string{strconv.Itoa(count), position.Name, strconv.Itoa(position.Capacity), strings.Join([]string{position.Description, period, hours}, "\n"), b.Location} {
+			for i, value := range []string{strconv.Itoa(count), position.Name, strconv.Itoa(position.Capacity), position.Description, b.Location} {
 				setCell(cells[i], value)
 			}
 			second.InsertChildAt(marker.Index(), clone)

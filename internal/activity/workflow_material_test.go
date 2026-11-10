@@ -35,7 +35,8 @@ func TestMaterialDefaultsAndDocumentOptions(t *testing.T) {
 	if validMaterialOptions(invalid) {
 		t.Fatal("duplicate guarantee accepted")
 	}
-	state := State{Material: m, Basics: Basics{Name: "附件1选项测试", Location: "测试地点", Sessions: []Session{{Name: "上午", Start: "2026-11-13T08:00:00+08:00", End: "2026-11-13T12:00:00+08:00", Positions: []Position{{Name: "引导", Capacity: 10}}}}}}
+	hours := 4
+	state := State{Material: m, Basics: Basics{Name: "附件1选项测试", Location: "测试地点", Sessions: []Session{{Name: "上午", Start: "2026-11-13T08:00:00+08:00", End: "2026-11-13T12:00:00+08:00", Positions: []Position{{Name: "引导", Capacity: 10, Description: "负责现场引导", Hours: &hours}, {Name: "接待", Capacity: 2, Hours: &hours}}}}}}
 	content, err := fillAttachment(state)
 	if err != nil {
 		t.Fatal(err)
@@ -67,6 +68,17 @@ func TestMaterialDefaultsAndDocumentOptions(t *testing.T) {
 			t.Fatal(err)
 		}
 		rows := doc.Root().SelectElement("body").SelectElements("tbl")[0].SelectElements("tr")
+		positionRows := doc.Root().SelectElement("body").SelectElements("tbl")[1].SelectElements("tr")
+		for i, want := range []string{"负责现场引导", ""} {
+			cell := positionRows[2+i].SelectElements("tc")[3]
+			var text strings.Builder
+			for _, value := range cell.FindElements(".//w:t") {
+				text.WriteString(value.Text())
+			}
+			if text.String() != want {
+				t.Fatalf("position description = %q, want %q", text.String(), want)
+			}
+		}
 		rules := rows[5].SelectElements("tc")[1].FindElements(".//w:sym")
 		if len(rules) != 3 || rules[2].SelectAttrValue("w:char", "") != "00FE" || rules[0].SelectAttrValue("w:char", "") == "00FE" {
 			t.Fatal("incorrect checkin rule checkbox mapping")

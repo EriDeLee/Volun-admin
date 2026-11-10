@@ -3,6 +3,7 @@ import type { ProjectPageProps } from "../types.ts";
 import WorkspaceShell from "../components/WorkspaceShell.tsx";
 import AssignmentPicker from "../components/AssignmentPicker.tsx";
 import ProjectAccountPicker from "../components/ProjectAccountPicker.tsx";
+import PositionList from "../components/PositionList.tsx";
 import AttachmentMaterialFields from "../components/AttachmentMaterialFields.tsx";
 import AttachmentPreview from "../components/AttachmentPreview.tsx";
 import Icon from "../components/Icon.tsx";
@@ -15,6 +16,7 @@ import {
   sessionRangeError,
   memberAssignments,
   workflowAvailability,
+  basicsSnapshot,
 } from "../lib/workflow.ts";
 import type {
   Workflow,
@@ -76,6 +78,7 @@ export default function WorkflowPage(
   const [member, setMember] = useState<Member>(emptyMember),
     [paste, setPaste] = useState("");
   const [reason, setReason] = useState("");
+  const [showPositions, setShowPositions] = useState(false);
   const [previewFile, setPreviewFile] = useState<
     History["materials"][number] | null
   >(null);
@@ -207,9 +210,11 @@ export default function WorkflowPage(
       }
       setData(result);
       setBasics(structuredClone(result.state.draft || result.state.basics));
-      setMaterial(result.state.material);
+      if (path !== "/basics" && path !== "/changes")
+        setMaterial(result.state.material);
       if (path === "/forms")
         setForm((previous) => ({ ...previous, rotate: false }));
+      if (path === "/changes") setReason("");
       setHistory(await request<History>(`${base}/history`));
       setNotice("已保存到服务器。");
       return true;
@@ -323,6 +328,13 @@ export default function WorkflowPage(
   const saveBasics = (e: React.FormEvent) => {
     e.preventDefault();
     if (!basics || !data) return;
+    if (
+      data.approval === "approved" &&
+      basicsSnapshot(basics) === basicsSnapshot(data.state.basics)
+    ) {
+      setError("项目基础信息未发生变化，请修改后再提交变更申请。");
+      return;
+    }
     const validation = sessionRangeError(basics);
     if (validation) {
       setError(validation);
@@ -659,113 +671,13 @@ export default function WorkflowPage(
                             />
                           </label>
                         </div>
-                        {s.positions.map((p, pi) => (
-                          <div className="workflow-grid" key={p.id}>
-                            <label>
-                              岗位名称
-                              <input
-                                required
-                                value={p.name}
-                                onChange={(e) =>
-                                  editSession(
-                                    index,
-                                    "positions",
-                                    s.positions.map((v, i) =>
-                                      i === pi
-                                        ? { ...v, name: e.target.value }
-                                        : v,
-                                    ),
-                                  )
-                                }
-                              />
-                            </label>
-                            <label>
-                              招募人数
-                              <input
-                                type="number"
-                                required
-                                min={1}
-                                value={p.capacity}
-                                onChange={(e) =>
-                                  editSession(
-                                    index,
-                                    "positions",
-                                    s.positions.map((v, i) =>
-                                      i === pi
-                                        ? {
-                                            ...v,
-                                            capacity: Number(e.target.value),
-                                          }
-                                        : v,
-                                    ),
-                                  )
-                                }
-                              />
-                            </label>
-                            <label>
-                              拟计整数小时
-                              <input
-                                type="number"
-                                min={0}
-                                step={1}
-                                value={p.hours ?? ""}
-                                onChange={(e) =>
-                                  editSession(
-                                    index,
-                                    "positions",
-                                    s.positions.map((v, i) =>
-                                      i === pi
-                                        ? {
-                                            ...v,
-                                            hours:
-                                              e.target.value === ""
-                                                ? null
-                                                : Number(e.target.value),
-                                          }
-                                        : v,
-                                    ),
-                                  )
-                                }
-                              />
-                            </label>
-                            <label>
-                              岗位说明
-                              <input
-                                value={p.description}
-                                onChange={(e) =>
-                                  editSession(
-                                    index,
-                                    "positions",
-                                    s.positions.map((v, i) =>
-                                      i === pi
-                                        ? { ...v, description: e.target.value }
-                                        : v,
-                                    ),
-                                  )
-                                }
-                              />
-                            </label>
-                          </div>
-                        ))}
+                        <PositionList
+                          positions={s.positions}
+                          onChange={(positions) =>
+                            editSession(index, "positions", positions)
+                          }
+                        />
                         <div className="activity-actions">
-                          <button
-                            type="button"
-                            className="button secondary"
-                            onClick={() =>
-                              editSession(index, "positions", [
-                                ...s.positions,
-                                {
-                                  id: crypto.randomUUID(),
-                                  name: "",
-                                  capacity: 1,
-                                  hours: null,
-                                  description: "",
-                                },
-                              ])
-                            }
-                          >
-                            增加岗位
-                          </button>
                           <button
                             type="button"
                             className="button secondary"
@@ -823,7 +735,22 @@ export default function WorkflowPage(
                         />
                       </label>
                     )}
-                    <button className="button primary">
+                    {data.approval === "approved" &&
+                      !data.state.draft &&
+                      basicsSnapshot(basics) ===
+                        basicsSnapshot(data.state.basics) && (
+                        <p className="workflow-note">
+                          当前信息已获批准，修改基础信息后可提交新的变更申请。
+                        </p>
+                      )}
+                    <button
+                      className="button primary"
+                      disabled={
+                        data.approval === "approved" &&
+                        basicsSnapshot(basics) ===
+                          basicsSnapshot(data.state.basics)
+                      }
+                    >
                       {data.approval === "approved"
                         ? "提交变更申请"
                         : "保存基础信息"}
@@ -1849,7 +1776,152 @@ export default function WorkflowPage(
                       value={material}
                       basics={data.state.basics}
                       onChange={setMaterial}
-                      onEditPositions={() => setTab("overview")}
+                      onEditPositions={() =>
+                        setShowPositions((shown) => !shown)
+                      }
+                      positionsExpanded={showPositions}
+                      positionDetails={
+                        basics && (
+                          <section aria-label="场次与岗位详情">
+                            <fieldset
+                              disabled={
+                                busy ||
+                                !can("basics.edit") ||
+                                data.approval === "pending" ||
+                                !!data.state.draft
+                              }
+                            >
+                              {basics.sessions.length ? (
+                                basics.sessions.map((session, index) => (
+                                  <section
+                                    className="workflow-session"
+                                    key={session.id}
+                                  >
+                                    <h3>{session.name || "未命名场次"}</h3>
+                                    <p>
+                                      {localTime(session.start).replace(
+                                        "T",
+                                        " ",
+                                      )}{" "}
+                                      至{" "}
+                                      {localTime(session.end).replace("T", " ")}
+                                    </p>
+                                    {can("basics.edit") ? (
+                                      <PositionList
+                                        positions={session.positions}
+                                        onChange={(positions) =>
+                                          editSession(
+                                            index,
+                                            "positions",
+                                            positions,
+                                          )
+                                        }
+                                      />
+                                    ) : (
+                                      <div className="activity-table-wrap">
+                                        <table className="activity-table">
+                                          <thead>
+                                            <tr>
+                                              <th scope="col">岗位</th>
+                                              <th scope="col">招募人数</th>
+                                              <th scope="col">拟计时长</th>
+                                              <th scope="col">说明</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {session.positions.map(
+                                              (position) => (
+                                                <tr key={position.id}>
+                                                  <td>
+                                                    {position.name ||
+                                                      "未命名岗位"}
+                                                  </td>
+                                                  <td>
+                                                    {position.capacity} 人
+                                                  </td>
+                                                  <td>
+                                                    {position.hours == null
+                                                      ? "未填写"
+                                                      : `${position.hours} 小时`}
+                                                  </td>
+                                                  <td
+                                                    style={{
+                                                      whiteSpace: "pre-wrap",
+                                                    }}
+                                                  >
+                                                    {position.description ||
+                                                      "—"}
+                                                  </td>
+                                                </tr>
+                                              ),
+                                            )}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )}
+                                    {!session.positions.length && (
+                                      <p>暂无岗位。</p>
+                                    )}
+                                  </section>
+                                ))
+                              ) : (
+                                <p>暂无场次与岗位。</p>
+                              )}
+                              {can("basics.edit") && (
+                                <>
+                                  {data.approval === "approved" && (
+                                    <label>
+                                      变更原因
+                                      <input
+                                        value={reason}
+                                        onChange={(e) =>
+                                          setReason(e.target.value)
+                                        }
+                                      />
+                                    </label>
+                                  )}
+                                  <button
+                                    type="button"
+                                    className="button primary"
+                                    disabled={
+                                      basicsSnapshot(basics) ===
+                                      basicsSnapshot(data.state.basics)
+                                    }
+                                    onClick={(e) => {
+                                      if (
+                                        data.approval === "approved" &&
+                                        reason.trim().length < 2
+                                      ) {
+                                        setError(
+                                          "请填写至少两个字的变更原因。",
+                                        );
+                                        return;
+                                      }
+                                      const fields =
+                                        e.currentTarget.closest("fieldset");
+                                      for (const input of fields?.querySelectorAll(
+                                        "input, textarea",
+                                      ) || []) {
+                                        if (
+                                          !(
+                                            input as HTMLInputElement
+                                          ).reportValidity()
+                                        )
+                                          return;
+                                      }
+                                      saveBasics(e);
+                                    }}
+                                  >
+                                    {data.approval === "approved"
+                                      ? "提交变更申请"
+                                      : "保存场次与岗位"}
+                                  </button>
+                                </>
+                              )}
+                            </fieldset>
+                          </section>
+                        )
+                      }
                     />
                     <button className="button primary" disabled={busy}>
                       保存材料草稿

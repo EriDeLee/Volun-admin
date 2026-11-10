@@ -1,6 +1,12 @@
 import type { ComponentProps, ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import WorkflowPage from "./WorkflowPage.tsx";
 import ParticipantPage from "./ParticipantPage.tsx";
@@ -86,6 +92,161 @@ const props = {
   logout: vi.fn(),
   onSessionIssue: vi.fn(),
 } as ComponentProps<typeof WorkflowPage>;
+
+test("approved changes cannot be submitted again without a new edit", async () => {
+  let data = initial();
+  data.capabilities.push("basics.edit", "proposal.review");
+  vi.mocked(request).mockImplementation(async (path, body) => {
+    if (path.endsWith("/history"))
+      return { events: [], materials: [] } as never;
+    if (path.endsWith("/changes")) {
+      const change = body as {
+        basics: Workflow["state"]["basics"];
+        reason: string;
+      };
+      data = structuredClone(data);
+      data.version++;
+      data.state.draft = change.basics;
+      data.state.applications.push({
+        id: "change",
+        kind: "change",
+        status: "pending",
+        basics: change.basics,
+        reason: change.reason,
+        applicant: "负责人",
+        reviewer: "",
+        created_at: "2026-11-09T00:00:00Z",
+      });
+    }
+    if (path.endsWith("/decision")) {
+      data = structuredClone(data);
+      data.version++;
+      data.state.basics = data.state.draft!;
+      data.state.draft = null;
+      data.state.applications[0].status = "approved";
+    }
+    return structuredClone(data) as never;
+  });
+  render(<WorkflowPage {...props} initialTab="overview" />);
+  const user = userEvent.setup();
+  const submit = await screen.findByRole<HTMLButtonElement>("button", {
+    name: "提交变更申请",
+  });
+  expect(submit.disabled).toBe(true);
+  await user.type(screen.getByLabelText("变更原因"), "调整服务安排");
+  expect(submit.disabled).toBe(true);
+  const name = screen.getByLabelText<HTMLInputElement>("项目名称");
+  await user.type(name, "新");
+  expect(submit.disabled).toBe(false);
+  await user.clear(name);
+  await user.type(name, "测试项目");
+  expect(submit.disabled).toBe(true);
+  await user.type(name, "新");
+  await user.click(submit);
+  await waitFor(() =>
+    expect(screen.getByLabelText<HTMLInputElement>("变更原因").value).toBe(""),
+  );
+  await user.type(screen.getByLabelText("审核意见"), "同意变更");
+  await user.click(screen.getByRole("button", { name: "审核通过" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "审核通过" })).toBeNull(),
+  );
+  expect(submit.disabled).toBe(true);
+  expect(name.value).toBe("测试项目新");
+  await user.click(submit);
+  expect(
+    vi.mocked(request).mock.calls.filter(([path]) => path.endsWith("/changes")),
+  ).toHaveLength(1);
+  await user.type(name, "再次修改");
+  expect(submit.disabled).toBe(false);
+});
+
+test("viewing positions keeps the material draft and makes no new requests", async () => {
+  const data = initial();
+  data.capabilities.push("materials.write");
+  data.state.material = { ...data.state.material, guarantees: [] };
+  vi.mocked(request).mockImplementation(async (path) =>
+    path.endsWith("/history")
+      ? ({ events: [], materials: [] } as never)
+      : (data as never),
+  );
+  render(<WorkflowPage {...props} initialTab="materials" />);
+  const user = userEvent.setup();
+  await user.type(await screen.findByLabelText("服务对象"), "保留草稿");
+  const calls = vi.mocked(request).mock.calls.length;
+  await user.click(screen.getByRole("button", { name: "查看场次与岗位" }));
+  const details = screen.getByRole("region", { name: "场次与岗位详情" });
+  expect(within(details).getByText("上午")).toBeTruthy();
+  expect(within(details).getByText("引导")).toBeTruthy();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(
+    screen
+      .getByRole("button", { name: "收起场次与岗位" })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  await user.click(screen.getByRole("button", { name: "收起场次与岗位" }));
+  expect(screen.queryByRole("region", { name: "场次与岗位详情" })).toBeNull();
+  expect((screen.getByLabelText("服务对象") as HTMLInputElement).value).toBe(
+    "保留草稿",
+  );
+  expect(vi.mocked(request)).toHaveBeenCalledTimes(calls);
+  expect(props.onNavigate).not.toHaveBeenCalled();
+});
+
+test("inline positions can be edited and submitted without losing the material draft", async () => {
+  const data = initial();
+  data.capabilities.push("materials.write", "basics.edit");
+  data.state.material = { ...data.state.material, guarantees: [] };
+  vi.mocked(request).mockImplementation(async (path, body) => {
+    if (path.endsWith("/history"))
+      return { events: [], materials: [] } as never;
+    if (path.endsWith("/changes")) {
+      const change = body as { basics: Workflow["state"]["basics"] };
+      return {
+        ...data,
+        version: 2,
+        state: { ...data.state, draft: change.basics },
+      } as never;
+    }
+    return data as never;
+  });
+  render(<WorkflowPage {...props} initialTab="materials" />);
+  const user = userEvent.setup();
+  await user.type(await screen.findByLabelText("服务对象"), "保留草稿");
+  await user.click(screen.getByRole("button", { name: "查看场次与岗位" }));
+  const details = screen.getByRole("region", { name: "场次与岗位详情" });
+  await user.click(within(details).getAllByRole("button", { name: "编辑" })[0]);
+  await user.type(within(details).getByLabelText("岗位1说明"), "负责入口引导");
+  await user.click(within(details).getByRole("button", { name: "完成" }));
+  await user.type(within(details).getByLabelText("变更原因"), "补充岗位说明");
+  await user.click(
+    within(details).getByRole("button", { name: "提交变更申请" }),
+  );
+  await waitFor(() =>
+    expect(request).toHaveBeenCalledWith(
+      "/activity/projects/p/changes",
+      expect.objectContaining({
+        basics: expect.objectContaining({
+          sessions: expect.arrayContaining([
+            expect.objectContaining({
+              positions: [
+                expect.objectContaining({ description: "负责入口引导" }),
+              ],
+            }),
+          ]),
+        }),
+        reason: "补充岗位说明",
+      }),
+      "POST",
+      1,
+    ),
+  );
+  expect((screen.getByLabelText("服务对象") as HTMLInputElement).value).toBe(
+    "保留草稿",
+  );
+  expect(screen.getByRole("region", { name: "场次与岗位详情" })).toBeTruthy();
+  expect(props.onNavigate).not.toHaveBeenCalled();
+});
 
 test("member deletion requires confirmation and refreshes the roster", async () => {
   const data = initial();

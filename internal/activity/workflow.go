@@ -1,6 +1,8 @@
 package activity
 
 import (
+	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -153,10 +155,28 @@ func (s *Service) requestChange(c *gin.Context) {
 		if !basicsValid(req.Basics) || len([]rune(strings.TrimSpace(req.Reason))) < 2 || len([]rune(req.Reason)) > 300 {
 			return "", errInvalid
 		}
+		if sameBasics(req.Basics, state.Basics) {
+			return "", errBasicsUnchanged
+		}
 		state.Draft = &req.Basics
 		state.Applications = append(state.Applications, Application{ID: newID(), Kind: "change", Status: "pending", Basics: req.Basics, Applicant: u.Sub, ApplicantName: u.Name, Reason: req.Reason, CreatedAt: time.Now().UTC()})
 		return req.Reason, nil
 	})
+}
+
+func sameBasics(a, b Basics) bool {
+	canonical := func(value Basics) Basics {
+		value.Sessions = slices.Clone(value.Sessions)
+		for i := range value.Sessions {
+			for _, field := range []*string{&value.Sessions[i].Start, &value.Sessions[i].End} {
+				if parsed, err := time.Parse(time.RFC3339Nano, *field); err == nil {
+					*field = parsed.UTC().Format(time.RFC3339Nano)
+				}
+			}
+		}
+		return value
+	}
+	return reflect.DeepEqual(canonical(a), canonical(b))
 }
 
 func (s *Service) decideApplication(c *gin.Context) {

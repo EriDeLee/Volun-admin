@@ -166,6 +166,7 @@ type Material struct {
 
 var errConflict = errors.New("workflow: version conflict")
 var errInvalid = errors.New("workflow: invalid operation")
+var errBasicsUnchanged = errors.New("workflow: basics unchanged")
 var errPermission = errors.New("workflow: permission denied")
 var errClosed = errors.New("workflow: window closed")
 var errHoursNotReady = errors.New("workflow: first session has not ended or preparation unconfirmed")
@@ -218,6 +219,8 @@ func failWorkflow(c *gin.Context, err error) {
 		code = errhandler.PermissionDenied
 	case errors.Is(err, errInvalid):
 		code = errhandler.InvalidArgument
+	case errors.Is(err, errBasicsUnchanged):
+		code = errhandler.BasicsUnchanged
 	case errors.Is(err, errClosed):
 		code = errhandler.QuestionnaireClosed
 	case errors.Is(err, errHoursNotReady):
