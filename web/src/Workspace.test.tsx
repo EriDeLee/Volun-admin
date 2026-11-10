@@ -353,39 +353,12 @@ test("protected deep links enforce first SSO password setup before requesting pr
   expect(location.pathname).toBe("/set-password");
 });
 
-test("public form needs no authentication and clearly completes only a local preview", async () => {
+test("removed public landing redirects to the authenticated workspace", async () => {
   history.replaceState(null, "", "/signup?preview=1");
-  const user = userEvent.setup();
   render(<App />);
-  await user.type(screen.getByLabelText<HTMLInputElement>("姓名 *"), "示例甲");
-  await user.type(
-    screen.getByLabelText<HTMLInputElement>("学号 / 人员编号 *"),
-    "0007",
-  );
-  await user.type(
-    screen.getByLabelText<HTMLInputElement>("学院 / 部门 *"),
-    "示例学院",
-  );
-  await user.selectOptions(
-    screen.getByLabelText<HTMLInputElement>("意向岗位 *"),
-    "现场引导（示例）",
-  );
-  await user.selectOptions(
-    screen.getByLabelText<HTMLInputElement>("参与场次 *"),
-    "第一场（仅版式示例）",
-  );
-  await user.click(screen.getByRole<HTMLButtonElement>("checkbox"));
-  await user.click(
-    screen.getByRole<HTMLButtonElement>("button", { name: "完成填写预览" }),
-  );
-  await screen.findByRole("heading", { name: "填写预览已完成" });
-  expect(fetch).not.toHaveBeenCalled();
-  await user.click(
-    screen.getByRole<HTMLButtonElement>("button", { name: "修改本次预览" }),
-  );
-  expect(
-    screen.getByLabelText<HTMLInputElement>("学号 / 人员编号 *").value,
-  ).toBe("0007");
+  await screen.findByRole("heading", { name: "活动管理工作台" });
+  expect(location.pathname).toBe("/activity");
+  expect(screen.queryByRole("link", { name: "公开问卷" })).toBeNull();
 });
 
 test("activity administrator can view members but cannot recruit or maintain hours", async () => {
