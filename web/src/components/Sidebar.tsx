@@ -45,7 +45,15 @@ export default function Sidebar({
       ]
     : [];
   const management = canReadUsers(session)
-    ? [{ path: "/users", label: "成员管理", icon: "people" }]
+    ? [
+        {
+          path: "/users",
+          label: groups.includes("super_admin")
+            ? "成员管理"
+            : "账号目录（只读）",
+          icon: "people",
+        },
+      ]
     : [];
   const personal = [
     { path: "/signup", label: "公开问卷", icon: "file" },
@@ -92,7 +100,9 @@ export default function Sidebar({
           )}
           {management.length > 0 && (
             <>
-              <p className="nav-caption activity-personal-caption">系统管理</p>
+              <p className="nav-caption activity-personal-caption">
+                {groups.includes("super_admin") ? "系统管理" : "账号查询"}
+              </p>
               {links(management)}
             </>
           )}

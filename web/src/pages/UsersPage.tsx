@@ -174,14 +174,14 @@ export default function UsersPage({
     <WorkspaceShell
       session={session}
       route="/users"
-      crumb="成员管理"
+      crumb={canEdit ? "成员管理" : "账号目录（只读）"}
       onNavigate={onNavigate}
       logout={logout}
       logoutPending={logoutPending}
     >
       <div className="page-heading">
         <div>
-          <h1>成员管理</h1>
+          <h1>{canEdit ? "成员管理" : "账号目录（只读）"}</h1>
           <p>
             {canEdit
               ? "管理平台成员账号、分配用户组及启停账号。"
