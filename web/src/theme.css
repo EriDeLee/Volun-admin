@@ -161,3 +161,144 @@ textarea:focus-visible {
     gap: 14px;
   }
 }
+
+/* Visual polish: depth, status colors, hover feedback, numeric alignment. */
+:root {
+  --shadow-sm: 0 1px 2px #1b2a4a0f, 0 1px 1px #1b2a4a0a;
+  --shadow-md: 0 6px 18px -6px #1b2a4a24, 0 2px 4px #1b2a4a0d;
+  --ring: 0 0 0 3px color-mix(in srgb, var(--accent-solid) 18%, transparent);
+}
+:root[data-theme="dark"] {
+  --shadow-sm: 0 1px 2px #00000040;
+  --shadow-md: 0 8px 22px -8px #00000099;
+}
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+h1,
+h2,
+h3 {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.activity-stat > strong,
+.activity-table td,
+.pagination {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Cards */
+.activity-stat,
+.activity-content .panel {
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+.activity-stat {
+  transition:
+    box-shadow 0.18s ease,
+    transform 0.18s ease,
+    border-color 0.18s ease;
+}
+.activity-stat:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+.activity-hero {
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Status badges: dot + real semantic colors */
+.activity-badge {
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-weight: 550;
+  border: 1px solid var(--accent-border);
+}
+.activity-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+.activity-badge.green {
+  color: var(--success);
+  background: var(--success-bg);
+  border-color: var(--success-border);
+}
+.activity-badge.purple {
+  color: var(--purple);
+  background: var(--purple-bg);
+  border-color: var(--purple-border);
+}
+.activity-badge.amber {
+  color: var(--warning);
+  background: var(--warning-bg);
+  border-color: var(--warning-border);
+}
+.activity-badge.red {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+}
+.activity-badge.gray {
+  color: var(--text-muted);
+  background: var(--surface-muted);
+  border-color: var(--border);
+}
+
+/* Tables */
+.activity-table th {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+.activity-table tbody tr {
+  transition: background-color 0.12s ease;
+}
+.activity-table tbody tr:hover {
+  background: var(--accent-bg);
+}
+.activity-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Controls */
+.button {
+  transition:
+    background-color 0.14s ease,
+    border-color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+.button.primary {
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--accent-solid) 40%, transparent);
+}
+.button.secondary:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent-solid);
+  box-shadow: var(--ring);
+}
+.nav-item {
+  transition:
+    background-color 0.14s ease,
+    color 0.14s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
