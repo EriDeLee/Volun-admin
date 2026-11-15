@@ -1,3 +1,4 @@
+import ScrollRegion from "../components/ScrollRegion.tsx";
 import { asApiError } from "../lib/api.ts";
 import type { WorkspaceProps, ProjectList, CreateProject } from "../types.ts";
 import React, { useEffect, useRef, useState } from "react";
@@ -571,12 +572,7 @@ export default function ProjectsPage({
                 </ul>
               </div>
             ) : (
-              <div
-                className="activity-table-wrap"
-                role="region"
-                aria-label="项目台账，可横向滚动查看更多列"
-                tabIndex={0}
-              >
+              <ScrollRegion label="项目台账">
                 <table
                   className="activity-table ledger-table"
                   aria-label="项目台账"
@@ -652,7 +648,7 @@ export default function ProjectsPage({
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </ScrollRegion>
             )}
             <div className="pagination">
               <span>

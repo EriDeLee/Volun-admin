@@ -8,6 +8,7 @@
 | 首次运行、执行检查或排查本地问题 | [本地开发与检查](development.md) |
 | 配置数据库、SSO、二维码和附件1默认值 | [配置与 SSO](configuration.md) |
 | 修改前端页面、主题或运行浏览器检查 | [前端开发说明](../web/README.md) |
+| 查看滚动条与通用组件检查结果 | [界面检查记录](ui-review.md) |
 | 理解角色权限、项目状态及审批 | [权限及施工设计](task-02-project-workflow.md) |
 | 理解账号认证和首次设密 | [认证与 SSO 设计](task-01-auth-and-sso.md) |
 | 调整成员导入与项目审批 | [成员导入与审批](member-import-and-approvals.md) |

@@ -1,3 +1,4 @@
+import ScrollRegion from "./components/ScrollRegion.tsx";
 import WorkspaceShell from "./components/WorkspaceShell.tsx";
 import Modal from "./components/Modal.tsx";
 import { asApiError } from "./lib/api.ts";
@@ -489,7 +490,7 @@ export default function ActivityHome({
                     </button>
                   </div>
                   {list.length ? (
-                    <div className="activity-table-wrap">
+                    <ScrollRegion label="近期项目">
                       <table className="activity-table">
                         <thead>
                           <tr>
@@ -532,7 +533,7 @@ export default function ActivityHome({
                           ))}
                         </tbody>
                       </table>
-                    </div>
+                    </ScrollRegion>
                   ) : (
                     <div className="activity-empty">
                       <span className="activity-empty-icon">

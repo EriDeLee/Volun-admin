@@ -1,3 +1,4 @@
+import ScrollRegion from "./ScrollRegion.tsx";
 import { useState } from "react";
 import type { Position } from "../lib/workflow.ts";
 import "./PositionList.css";
@@ -39,7 +40,7 @@ export default function PositionList({
         </button>
       </div>
       {positions.length ? (
-        <div className="activity-table-wrap">
+        <ScrollRegion label="岗位列表">
           <table className="activity-table position-list-table">
             <thead>
               <tr>
@@ -176,7 +177,7 @@ export default function PositionList({
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollRegion>
       ) : (
         <p className="position-list-empty">暂无岗位，点击“增加岗位”填写。</p>
       )}

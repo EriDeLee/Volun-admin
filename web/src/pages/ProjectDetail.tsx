@@ -1,3 +1,4 @@
+import ScrollRegion from "../components/ScrollRegion.tsx";
 import type { ProjectPageProps } from "../types.ts";
 import React, { useState } from "react";
 import WorkspaceShell from "../components/WorkspaceShell.tsx";
@@ -351,7 +352,7 @@ export default function ProjectDetail(
                       </button>
                     </div>
                     {draft.sessions.length ? (
-                      <div className="activity-table-wrap">
+                      <ScrollRegion label="招募成员">
                         <table className="activity-table">
                           <thead>
                             <tr>
@@ -377,7 +378,7 @@ export default function ProjectDetail(
                             ))}
                           </tbody>
                         </table>
-                      </div>
+                      </ScrollRegion>
                     ) : (
                       <Empty title="还没有场次草稿">
                         添加服务时间、岗位与计划人数，便于安排招募与时长。
@@ -483,7 +484,7 @@ export default function ProjectDetail(
                     </button>
                   </div>
                   {people.length ? (
-                    <div className="activity-table-wrap">
+                    <ScrollRegion label="项目场次">
                       <table className="activity-table">
                         <thead>
                           <tr>
@@ -523,7 +524,7 @@ export default function ProjectDetail(
                           ))}
                         </tbody>
                       </table>
-                    </div>
+                    </ScrollRegion>
                   ) : (
                     <Empty
                       icon="people"
@@ -708,7 +709,7 @@ export default function ProjectDetail(
                     placeholder="从表格复制四列，以 Tab 分隔；不包含表头。"
                   />
                 </label>
-                <div className="activity-table-wrap">
+                <ScrollRegion label="项目时长">
                   <table className="activity-table">
                     <thead>
                       <tr>
@@ -727,7 +728,7 @@ export default function ProjectDetail(
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </ScrollRegion>
                 {formError && (
                   <p role="alert" className="error">
                     {formError}

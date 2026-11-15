@@ -440,6 +440,9 @@ function Application() {
                 name="username"
                 required
                 autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 placeholder="请输入账号"
                 value={form.username}
                 disabled={!!pending}

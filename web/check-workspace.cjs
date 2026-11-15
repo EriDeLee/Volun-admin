@@ -3,6 +3,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { launchBrowser } = require("./browser-options.cjs");
+const { checkComponents } = require("./check-components.cjs");
 
 const baseURL = process.env.BASE_URL || "http://127.0.0.1:4175";
 const output = path.join(__dirname, "browser-check");
@@ -226,15 +227,20 @@ async function checkWorkspace(browser) {
   await menu.click();
   const drawer = page.getByRole("dialog", { name: "主导航", exact: true });
   await drawer.waitFor();
+  assert.equal(await page.evaluate(() => document.body.style.overflow), "");
   assert.equal(
-    await page.evaluate(() => document.body.style.overflow),
-    "hidden",
+    await drawer.evaluate(
+      (element) => getComputedStyle(element, "::backdrop").overscrollBehavior,
+    ),
+    "contain",
   );
   for (let i = 0; i < 14; i++) {
     await page.keyboard.press("Tab");
     assert.equal(
-      await drawer.evaluate((element) =>
-        element.contains(document.activeElement),
+      await drawer.evaluate(
+        (element) =>
+          element.contains(document.activeElement) ||
+          document.activeElement === document.body,
       ),
       true,
     );
@@ -283,6 +289,7 @@ async function checkWorkspace(browser) {
   try {
     browser = await launchBrowser();
     await checkWorkspace(browser);
+    await checkComponents(browser, baseURL, output);
     console.log(`Workspace checks passed. Mock API screenshots: ${output}`);
   } finally {
     await browser?.close();

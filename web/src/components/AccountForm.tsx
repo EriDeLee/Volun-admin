@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Modal from "./Modal.tsx";
 import Icon from "./Icon.tsx";
 import { request } from "../lib/workflow.ts";
@@ -28,6 +28,13 @@ export default function AccountForm({
   const [busy, setBusy] = useState(false);
   const [visible, setVisible] = useState(false);
   const [error, setError] = useState("");
+  const [passwordInvalid, setPasswordInvalid] = useState(false);
+  const passwordInput = useRef<HTMLInputElement>(null);
+  const passwordHintID = useId();
+  const errorID = useId();
+  useEffect(() => {
+    if (passwordInvalid) passwordInput.current?.focus();
+  }, [passwordInvalid]);
   const lock = useRef(false);
   const change = (
     key: "username" | "name" | "id" | "password" | "phone",
@@ -45,7 +52,9 @@ export default function AccountForm({
           e.preventDefault();
           if (lock.current) return;
           const bytes = new TextEncoder().encode(form.password).length;
+          setPasswordInvalid(false);
           if (bytes < 12 || bytes > 72) {
+            setPasswordInvalid(true);
             setError("密码长度须为12至72字节。");
             return;
           }
@@ -153,6 +162,10 @@ export default function AccountForm({
                   <input
                     required
                     maxLength={120}
+                    name="username"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                     value={form.username}
                     onChange={(e) => change("username", e.target.value)}
                     autoComplete="off"
@@ -165,10 +178,22 @@ export default function AccountForm({
               {target ? "临时密码" : "初始密码"}
               <div className="account-password">
                 <input
+                  ref={passwordInput}
+                  name="password"
+                  aria-invalid={passwordInvalid || undefined}
+                  aria-describedby={
+                    passwordInvalid
+                      ? `${passwordHintID} ${errorID}`
+                      : passwordHintID
+                  }
                   required
                   type={visible ? "text" : "password"}
                   value={form.password}
-                  onChange={(e) => change("password", e.target.value)}
+                  onChange={(e) => {
+                    change("password", e.target.value);
+                    setPasswordInvalid(false);
+                    setError("");
+                  }}
                   autoComplete="new-password"
                   placeholder="12至72字节"
                 />
@@ -176,12 +201,15 @@ export default function AccountForm({
                   type="button"
                   className="activity-icon-button"
                   aria-label={visible ? "隐藏密码" : "显示密码"}
+                  aria-pressed={visible}
                   onClick={() => setVisible(!visible)}
                 >
                   <Icon name="eye" />
                 </button>
               </div>
-              <small>请单独告知成员此密码，下次登录时需设置新密码。</small>
+              <small id={passwordHintID}>
+                密码须为 12 至 72 字节。请单独告知成员，下次登录时需设置新密码。
+              </small>
             </label>
             {!target && (
               <fieldset className="full user-group-fieldset">
@@ -217,7 +245,7 @@ export default function AccountForm({
           </p>
         )}
         {error && (
-          <p className="error" role="alert">
+          <p className="error" role="alert" id={errorID}>
             {error}
           </p>
         )}

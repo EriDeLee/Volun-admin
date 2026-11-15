@@ -1527,6 +1527,8 @@ button:disabled {
   margin: 20px 0;
 }
 .workflow-tabs button {
+  position: relative;
+  font-weight: 550;
   white-space: nowrap;
   border: 0;
   background: transparent;
@@ -1534,10 +1536,14 @@ button:disabled {
   color: var(--text-muted);
   cursor: pointer;
 }
-.workflow-tabs button.active {
+.workflow-tabs button[aria-selected="true"] {
   color: var(--accent);
-  border-bottom: 3px solid var(--accent-border);
-  font-weight: 600;
+}
+.workflow-tabs button[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  inset: auto 10px 0;
+  border-block-end: 3px solid currentColor;
 }
 .workflow-tabs button small {
   display: block;

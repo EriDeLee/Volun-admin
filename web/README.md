@@ -60,7 +60,7 @@ yarn build          # 产物位于 dist/
 yarn test:browser
 ```
 
-`check-workspace.cjs` 自动启动 `127.0.0.1:4175` 的 Vite，退出时关闭服务；模拟 API 覆盖台账搜索、筛选恢复、选择、加载和错误重试，以及导航焦点、响应式布局和浅深主题。截图保存在 `web/browser-check/`（已忽略），模拟数据只用于验证。
+`check-workspace.cjs` 自动启动 `127.0.0.1:4175` 的 Vite，退出时关闭服务；模拟 API 覆盖台账搜索、筛选恢复、选择、加载和错误重试，以及导航焦点、响应式布局和浅深主题；`check-components.cjs` 另检查原生弹窗、滚动隔离、标签页键盘操作、输入错误、触屏尺寸、高对比度，并用 axe-core 扫描 12 个页面和状态。截图保存在 `web/browser-check/`（已忽略），模拟数据只用于验证。
 
 共享 `browser-options.cjs` 优先使用 `BROWSER_EXECUTABLE_PATH` 指定的浏览器，其次使用 `BROWSER_CHANNEL`（如 `chrome`、`msedge`），否则查找常见系统 Chrome/Chromium/Edge 与 Playwright Chromium。不再依赖写死的 Windows 路径。
 
@@ -79,10 +79,13 @@ PowerShell 使用 `$env:BROWSER_EXECUTABLE_PATH = 'C:\Program Files\Google\Chrom
 ## 界面维护
 
 - 管理页、工作台和个人信息共用 `components/WorkspaceShell.tsx`，由 `Sidebar.tsx` 按角色提供导航；顶部提供“跳到主要内容”。新增页面复用外壳，避免导航与主题行为分叉。
-- 移动导航使用原生 `<dialog>`：打开后锁定背景滚动，焦点留在抽屉内，支持关闭按钮、Escape、点击遮罩和选择页面后关闭；关闭后恢复触发按钮焦点。
+- 移动导航使用原生 `<dialog>`，通过 `showModal()` 打开，支持关闭按钮、Escape、点击遮罩和选择页面后关闭；焦点与背景交互由浏览器管理，允许键盘用户进入浏览器工具栏。`Modal`、导航和 Word 预览共用 `useModalDialog` 生命周期，不手工捕获 Tab 或改写根元素的 overflow。
 - 在 `theme.css` 中维护语义颜色变量，页面通过变量支持浅深主题。操作蓝用于当前导航、关键操作和交互反馈；状态同时显示文字，不只依赖颜色。
 - 760px 及以下的项目台账显示列表，保留批量选择和详情、成员、时长、材料入口；桌面保留完整表格，部分选择时全选框显示半选状态。新请求清空旧选择，避免导出旧筛选结果。
 - 数据加载期间不显示虚假的零结果，首次加载用静态骨架；筛选无匹配提供清除入口，错误提供重试。长项目名称、部门与人员编号允许换行，保留编号前导零。
+- 滚动条使用主题变量、`scrollbar-color` 和 `scrollbar-width`；旧 WebKit 仅在标准颜色属性不支持时使用回退。触屏保留原生滚动条，高对比度恢复常规宽度；不要隐藏滚动条或接管滚轮。
+- 宽表格复用 `ScrollRegion`，支持 Tab 聚焦后使用方向键滚动。弹窗的 CSS 滚动隔离采用渐进增强，长弹窗始终保留顶部关闭入口，详见[界面检查记录](../docs/ui-review.md)。
+- 项目标签页使用 `tablist`/`tab`/`tabpanel`；方向键和 Home/End 仅移动焦点，Enter 或空格切换内容，避免操作方向键时打断正在填写的长表单。
 - 使用共享 `Modal`、`Badge` 和 `Icon`；表单有可访问名称，错误用 `role="alert"`，进度与成功消息用 `role="status"`。验证键盘操作、320px 手机、平板、桌面和两种主题。
 - 保留减少动态效果偏好，不添加装饰性加载动画；不把权限判断或模拟数据当作服务端授权。
 

@@ -1,3 +1,4 @@
+import ScrollRegion from "../components/ScrollRegion.tsx";
 import type { ProjectPageProps } from "../types.ts";
 import { useState } from "react";
 import WorkspaceShell from "../components/WorkspaceShell.tsx";
@@ -289,7 +290,7 @@ export default function HoursPage(props: ProjectPageProps) {
                     {session.max_hours} 整数小时 / 人
                   </p>
                   {people.length ? (
-                    <div className="activity-table-wrap">
+                    <ScrollRegion label="成员时长登记">
                       <table className="activity-table hours-table">
                         <thead>
                           <tr>
@@ -341,7 +342,7 @@ export default function HoursPage(props: ProjectPageProps) {
                           ))}
                         </tbody>
                       </table>
-                    </div>
+                    </ScrollRegion>
                   ) : (
                     <Empty
                       icon="people"
@@ -428,7 +429,7 @@ export default function HoursPage(props: ProjectPageProps) {
             <p className="muted tiny">
               截取时间：{snapshot.time}。这是前端草稿预览，尚未提交复核。
             </p>
-            <div className="activity-table-wrap">
+            <ScrollRegion label="时长明细">
               <table className="activity-table">
                 <thead>
                   <tr>
@@ -447,7 +448,7 @@ export default function HoursPage(props: ProjectPageProps) {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollRegion>
           </div>
         </Modal>
       )}

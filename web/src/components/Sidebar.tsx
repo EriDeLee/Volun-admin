@@ -1,6 +1,7 @@
 import type { AuthSession } from "../types.ts";
 import { useEffect, useRef } from "react";
 import { useMediaQuery } from "../lib/useMediaQuery.ts";
+import { useModalDialog } from "../lib/useModalDialog.ts";
 import {
   canManage,
   groupNames,
@@ -26,23 +27,13 @@ export default function Sidebar({
   const mobile = useMediaQuery("(max-width: 760px)");
   const dialog = useRef<HTMLDialogElement>(null);
   const wasMobile = useRef(mobile);
+  const pressedOutside = useRef(false);
+  useModalDialog(dialog, mobile && open);
 
   useEffect(() => {
     if (wasMobile.current && !mobile) onClose();
     wasMobile.current = mobile;
   }, [mobile, onClose]);
-
-  useEffect(() => {
-    const drawer = dialog.current;
-    if (!mobile || !open || !drawer) return;
-    drawer.showModal();
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      drawer.close();
-      document.body.style.overflow = overflow;
-    };
-  }, [mobile, open]);
 
   const groups = session.user.groups || [];
   const manager = canManage(session);
@@ -170,35 +161,29 @@ export default function Sidebar({
       id="workspace-navigation"
       className="sidebar activity-sidebar navigation-drawer"
       aria-label="主导航"
-      onKeyDown={(event) => {
-        if (event.key !== "Tab") return;
-        const controls = event.currentTarget.querySelectorAll<HTMLElement>(
-          "a[href], button:not([disabled])",
-        );
-        const first = controls[0];
-        const last = controls[controls.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last?.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first?.focus();
-        }
+      {...{ closedby: "any" }}
+      onClose={(event) => {
+        if (!event.currentTarget.open) onClose();
       }}
-      onCancel={(event) => {
-        event.preventDefault();
-        onClose();
-      }}
-      onClick={(event) => {
-        if (event.target !== event.currentTarget) return;
+      onPointerDown={(event) => {
+        if ("closedBy" in HTMLDialogElement.prototype) return;
         const rect = event.currentTarget.getBoundingClientRect();
-        if (
+        pressedOutside.current =
           event.clientX < rect.left ||
           event.clientX > rect.right ||
           event.clientY < rect.top ||
-          event.clientY > rect.bottom
-        )
-          onClose();
+          event.clientY > rect.bottom;
+      }}
+      onPointerUp={(event) => {
+        if ("closedBy" in HTMLDialogElement.prototype) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        const outside =
+          event.clientX < rect.left ||
+          event.clientX > rect.right ||
+          event.clientY < rect.top ||
+          event.clientY > rect.bottom;
+        if (pressedOutside.current && outside) onClose();
+        pressedOutside.current = false;
       }}
     >
       {content}

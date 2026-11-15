@@ -7,7 +7,7 @@
   --surface-glass: #ffffffa6;
   --text: #233149;
   --text-strong: #172b43;
-  --text-muted: #65748b;
+  --text-muted: #5f6f86;
   --text-subtle: #5f6f86;
   --on-accent: #fff;
   --accent: #2457d6;
@@ -17,7 +17,7 @@
   --accent-border: #a8bce8;
   --border: #e1e7f0;
   --border-strong: #c4d0e1;
-  --success: #168265;
+  --success: #11785b;
   --success-bg: #e9f6ef;
   --success-border: #a3d7c0;
   --warning: #946514;
@@ -30,7 +30,11 @@
   --purple-bg: #f2edfd;
   --purple-border: #cdb4ed;
   --overlay: #17284766;
-  --focus: #85adff;
+  --focus: #2457d6;
+  --scrollbar-thumb: #7b8ba3;
+  --scrollbar-thumb-hover: #5f6f86;
+  --scrollbar-track: transparent;
+  --control-border: #7b8ba3;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -42,7 +46,7 @@
   --text: #dce5f2;
   --text-strong: #f0f4fa;
   --text-muted: #a4b3c9;
-  --text-subtle: #8d9eb6;
+  --text-subtle: #92a2b9;
   --accent: #93b7ff;
   --accent-solid: #3568dc;
   --accent-hover: #4478ed;
@@ -64,6 +68,9 @@
   --purple-border: #69518f;
   --overlay: #030810b3;
   --focus: #a2c3ff;
+  --scrollbar-thumb: #6f829d;
+  --scrollbar-thumb-hover: #9cadc4;
+  --control-border: #6f829d;
 }
 html {
   background: var(--page-bg);
@@ -308,5 +315,150 @@ textarea:focus {
   *::after {
     transition: none !important;
     animation: none !important;
+  }
+}
+
+/* Preserve native scrolling; use a quiet, rounded track on mouse/trackpad devices. */
+html {
+  scrollbar-gutter: stable;
+}
+@media (pointer: fine) and (forced-colors: none) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+  /* Legacy Safari keeps its native controls and gets the same color tokens. */
+  @supports not (scrollbar-color: auto) {
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    ::-webkit-scrollbar-track,
+    ::-webkit-scrollbar-corner {
+      background: var(--scrollbar-track);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--scrollbar-thumb);
+      background-clip: padding-box;
+      border: 2px solid transparent;
+      border-radius: 999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background-color: var(--scrollbar-thumb-hover);
+    }
+  }
+}
+@media (prefers-contrast: more) {
+  :root {
+    --scrollbar-thumb: var(--text-strong);
+    --scrollbar-track: var(--surface);
+  }
+  * {
+    scrollbar-width: auto;
+  }
+}
+
+.activity-sidebar,
+.activity-dialog {
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+.activity-dialog {
+  scroll-padding-block: 88px 20px;
+}
+.activity-dialog-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+}
+.activity-table-wrap,
+.workflow-table,
+.workflow-tabs {
+  overscroll-behavior-inline: contain;
+}
+[role="region"][tabindex="0"]:focus-visible,
+[role="tabpanel"]:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.activity-icon-button:hover:not(:disabled) {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+.button.secondary {
+  color: var(--text-strong);
+}
+@media (pointer: coarse) {
+  :root
+    :is(
+      .button,
+      .activity-icon-button,
+      .activity-text-button,
+      .password-toggle,
+      .theme-select,
+      .theme-select select,
+      .workflow-tabs button,
+      .activity-tabs button,
+      .import-help summary
+    ) {
+    min-width: 48px;
+    min-height: 48px;
+  }
+  :root
+    :is(
+      input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+      select,
+      textarea
+    ) {
+    font-size: max(1rem, 1em);
+  }
+  .account-password input {
+    padding-right: 52px;
+  }
+}
+
+dialog:modal {
+  overscroll-behavior: contain;
+}
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+}
+.activity-search,
+.theme-select {
+  border-color: var(--control-border);
+}
+:root
+  :is(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+    select,
+    textarea
+  ) {
+  border-color: var(--control-border);
+}
+:root :is(input, select, textarea):focus-visible {
+  border-color: var(--accent);
+}
+:root :is(input, select, textarea):is(:user-invalid, [aria-invalid="true"]) {
+  border-color: var(--danger);
+}
+
+@media (forced-colors: active) {
+  .nav-item[aria-current="page"] {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
+  .activity-tabs button {
+    border-bottom-color: Canvas;
+  }
+  .activity-tabs button.selected {
+    border-bottom-color: Highlight;
   }
 }

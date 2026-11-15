@@ -276,6 +276,9 @@ export default function ParticipantPage() {
                   <input
                     required
                     autoComplete="username"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                     value={account.username}
                     onChange={(event) =>
                       setAccount({ ...account, username: event.target.value })

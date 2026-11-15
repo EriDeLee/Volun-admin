@@ -108,7 +108,7 @@ test("mobile navigation closes after choosing a page and the brand respects the 
     />,
   );
   expect(screen.getByRole("dialog", { name: "主导航" })).toBeTruthy();
-  expect(document.body.style.overflow).toBe("hidden");
+  expect(document.body.style.overflow).toBe("");
   await userEvent.click(screen.getByRole("link", { name: "成员管理" }));
   expect(onNavigate).toHaveBeenLastCalledWith("/users");
   expect(onClose).toHaveBeenCalledTimes(1);

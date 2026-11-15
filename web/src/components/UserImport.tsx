@@ -1,3 +1,4 @@
+import ScrollRegion from "./ScrollRegion.tsx";
 import { useRef, useState } from "react";
 import Modal from "./Modal.tsx";
 import { request } from "../lib/workflow.ts";
@@ -194,7 +195,10 @@ export default function UserImport({
                 ? `预检通过，共 ${result.rows.length} 人。`
                 : "预检未通过，请修正以下错误后重试，尚未写入任何账号。"}
             </p>
-            <div className="activity-table-wrap import-preview">
+            <ScrollRegion
+              label="成员导入预检"
+              className="activity-table-wrap import-preview"
+            >
               <table className="activity-table">
                 <thead>
                   <tr>
@@ -217,7 +221,7 @@ export default function UserImport({
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollRegion>
           </>
         )}
       </div>

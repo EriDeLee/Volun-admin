@@ -1,3 +1,4 @@
+import ScrollRegion from "../components/ScrollRegion.tsx";
 import { asApiError } from "../lib/api.ts";
 import type { WorkspaceProps, AdminUserList, AdminUser } from "../types.ts";
 import React, { useEffect, useRef, useState } from "react";
@@ -347,7 +348,7 @@ export default function UsersPage({
           </div>
         ) : data?.items?.length ? (
           <>
-            <div className="activity-table-wrap">
+            <ScrollRegion label="成员目录">
               <table className="activity-table ledger-table">
                 <thead>
                   <tr>
@@ -439,7 +440,7 @@ export default function UsersPage({
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollRegion>
             <div className="pagination">
               <span>
                 第 {(page - 1) * data.page_size + 1}–

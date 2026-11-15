@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
+import ScrollRegion from "../components/ScrollRegion.tsx";
+import React, { useEffect, useId, useRef, useState } from "react";
 import type { ProjectPageProps } from "../types.ts";
 import WorkspaceShell from "../components/WorkspaceShell.tsx";
 import AssignmentPicker from "../components/AssignmentPicker.tsx";
@@ -66,6 +67,9 @@ export default function WorkflowPage(
   props: ProjectPageProps & { id: string; initialTab?: string },
 ) {
   const { id, onNavigate, onSessionIssue } = props;
+  const tabID = useId();
+  const panelID = `${tabID}-panel`;
+  const [focusedTab, setFocusedTab] = useState<string | null>(null);
   const base = `/activity/projects/${encodeURIComponent(id)}`;
   const [data, setData] = useState<Workflow | null>(null),
     [history, setHistory] = useState<History>({ events: [], materials: [] });
@@ -113,7 +117,7 @@ export default function WorkflowPage(
   const [qr, setQR] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const mutationLock = useRef(false);
-  const navigation = useRef<HTMLElement>(null);
+  const navigation = useRef<HTMLDivElement>(null);
   const [copying, setCopying] = useState(false);
   const handle = (e: unknown) => {
     const failure = e as Error & { status?: number; code?: number };
@@ -478,7 +482,7 @@ export default function WorkflowPage(
             : "项目协作"
       }
     >
-      <main className="workflow-page">
+      <div className="workflow-page">
         <header className="page-heading">
           <div>
             <p>项目协作 / {data?.project.code}</p>
@@ -502,17 +506,63 @@ export default function WorkflowPage(
             {notice}
           </p>
         )}
-        <nav className="workflow-tabs" aria-label="项目功能" ref={navigation}>
+        <div
+          className="workflow-tabs"
+          role="tablist"
+          aria-label="项目功能"
+          ref={navigation}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget))
+              setFocusedTab(null);
+          }}
+          onKeyDown={(event) => {
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+              return;
+            const enabled = Array.from(
+              event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                '[role="tab"]:not(:disabled)',
+              ),
+            );
+            if (!enabled.length) return;
+            const index = enabled.indexOf(
+              document.activeElement as HTMLButtonElement,
+            );
+            const next =
+              event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? enabled.length - 1
+                  : (index +
+                      (event.key === "ArrowRight" ? 1 : -1) +
+                      enabled.length) %
+                    enabled.length;
+            event.preventDefault();
+            setFocusedTab(enabled[next].dataset.tab || null);
+            enabled[next].focus();
+          }}
+        >
           {tabs.map(({ key, label, locked }) => (
             <button
               key={key}
+              id={`${tabID}-${key}`}
+              data-tab={key}
+              type="button"
               role="tab"
+              tabIndex={
+                key ===
+                (focusedTab ||
+                  tabs.find((step) => step.key === tab && !step.locked)?.key ||
+                  tabs.find((step) => !step.locked)?.key)
+                  ? 0
+                  : -1
+              }
               aria-selected={tab === key}
               aria-label={label}
               disabled={!!locked || !data}
               title={locked || undefined}
               className={tab === key ? "active" : ""}
               onClick={() => {
+                setFocusedTab(key);
                 setTab(key);
                 setQR("");
               }}
@@ -521,9 +571,14 @@ export default function WorkflowPage(
               {locked && <small>待开放</small>}
             </button>
           ))}
-        </nav>
+        </div>
         {data && (
-          <>
+          <div
+            id={panelID}
+            role="tabpanel"
+            aria-labelledby={`${tabID}-${tab}`}
+            tabIndex={0}
+          >
             {availability?.attendance &&
               !availability.hours &&
               !locked &&
@@ -969,7 +1024,7 @@ export default function WorkflowPage(
                     导出名单与时长
                   </a>
                 )}
-                <div className="workflow-table">
+                <ScrollRegion label="成员名单" className="workflow-table">
                   <table>
                     <thead>
                       <tr>
@@ -1088,7 +1143,7 @@ export default function WorkflowPage(
                       )}
                     </tbody>
                   </table>
-                </div>
+                </ScrollRegion>
                 {can("members.write") && (
                   <>
                     <div id="member-registration">{memberForm}</div>
@@ -1383,7 +1438,7 @@ export default function WorkflowPage(
                     onChange={(e) => setReason(e.target.value)}
                   />
                 </label>
-                <div className="workflow-table">
+                <ScrollRegion label="现场出勤" className="workflow-table">
                   <table>
                     <thead>
                       <tr>
@@ -1440,7 +1495,7 @@ export default function WorkflowPage(
                         ))}
                     </tbody>
                   </table>
-                </div>
+                </ScrollRegion>
               </section>
             )}
             {tab === "forms" && can("forms.write") && !locked && (
@@ -1655,7 +1710,10 @@ export default function WorkflowPage(
                         填入选中人员
                       </button>
                     </div>
-                    <div className="workflow-table">
+                    <ScrollRegion
+                      label="服务时长登记"
+                      className="workflow-table"
+                    >
                       <table>
                         <thead>
                           <tr>
@@ -1712,7 +1770,7 @@ export default function WorkflowPage(
                           })}
                         </tbody>
                       </table>
-                    </div>
+                    </ScrollRegion>
                     <button
                       className="button primary"
                       disabled={busy || !Object.keys(hourValues).length}
@@ -1860,16 +1918,16 @@ export default function WorkflowPage(
                 ))}
               </section>
             )}
-          </>
+          </div>
         )}
-        {!data && !error && <p>正在读取服务器数据…</p>}
+        {!data && !error && <p role="status">正在读取服务器数据…</p>}
         <button
           className="button secondary"
           onClick={() => onNavigate("/projects")}
         >
           返回项目台账
         </button>
-      </main>
+      </div>
     </WorkspaceShell>
   );
 }
