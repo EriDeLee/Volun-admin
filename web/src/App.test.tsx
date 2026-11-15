@@ -43,7 +43,7 @@ test("restores identity from the server with leading-zero ID and actual groups",
   expect(document.body.textContent).not.toContain("local-001");
   expect(screen.queryByText("平台用户标识")).toBeNull();
   expect(screen.getAllByText("活动管理员").length).toBeGreaterThan(0);
-  expect(screen.getByText("已通过会话验证")).toBeTruthy();
+  expect(screen.queryByText("已通过会话验证")).toBeNull();
   expect(location.pathname).toBe("/profile");
 });
 
@@ -82,7 +82,7 @@ test("login failure keeps username, clears password, and allows a successful ret
     screen.getByRole<HTMLButtonElement>("button", { name: "登录平台" }),
   );
   await screen.findByRole("heading", { name: "个人信息" });
-  expect(screen.getByText("账号密码登录")).toBeTruthy();
+  expect(screen.getByText("001234")).toBeTruthy();
   expect(JSON.parse(String(fetch.mock.calls[2][1]?.body))).toEqual({
     username: "tester",
     password: "correct-password",
@@ -208,7 +208,7 @@ test("new SSO identity is sent to the required password setup page and then to p
   render(<App />);
   await screen.findByRole("heading", { name: "请设置登录密码" });
   expect(document.body.textContent).not.toContain("local-001");
-  expect(screen.getByText("平台登录账号：tester")).toBeTruthy();
+  expect(screen.getByText("登录账号：tester")).toBeTruthy();
   expect(location.pathname).toBe("/set-password");
   await user.type(
     screen.getByLabelText<HTMLInputElement>("新密码"),
@@ -245,9 +245,10 @@ test("password setup rejects mismatched confirmations without sending a request"
   await user.click(
     screen.getByRole<HTMLButtonElement>("button", { name: "设置密码并继续" }),
   );
-  expect((await screen.findByRole("alert")).textContent).toContain(
-    "两次输入的密码不一致",
+  expect(screen.getByLabelText("确认新密码").getAttribute("aria-invalid")).toBe(
+    "true",
   );
+  expect(screen.queryByRole("alert")).toBeNull();
   expect(fetch).toHaveBeenCalledTimes(1);
 });
 

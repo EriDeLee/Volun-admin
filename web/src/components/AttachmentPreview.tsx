@@ -147,10 +147,7 @@ export default function AttachmentPreview({
           <Icon name="close" />
         </button>
       </div>
-      <p className="attachment-preview-note">
-        正在查看已生成的 Word 文件。浏览器与 Word
-        的字体、分页可能略有差异，请以下载文件为准。
-      </p>
+      <p className="attachment-preview-note">排版以下载文件为准。</p>
       <div className="attachment-preview-toolbar">
         <label>
           显示比例

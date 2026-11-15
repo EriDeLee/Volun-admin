@@ -30,7 +30,7 @@ const (
 func (code Code) details() (int, string) {
 	switch code {
 	case VersionConflict:
-		return http.StatusConflict, "数据版本已变化，请刷新后重试"
+		return http.StatusConflict, "内容有更新，尚未保存，请刷新后重试"
 	case QuestionnaireClosed:
 		return http.StatusConflict, "问卷或签到窗口已关闭"
 	case ProjectLocked:
@@ -40,13 +40,13 @@ func (code Code) details() (int, string) {
 	case MemberHasRecords:
 		return http.StatusConflict, "该成员已有出勤或时长记录，不能删除"
 	case BasicsUnchanged:
-		return http.StatusBadRequest, "项目基础信息未发生变化，请修改后再提交变更申请"
+		return http.StatusBadRequest, "立项信息未修改"
 	case InvalidArgument:
-		return http.StatusBadRequest, "参数不合法"
+		return http.StatusBadRequest, "请检查填写内容"
 	case ResourceNotFound:
-		return http.StatusNotFound, "接口不存在"
+		return http.StatusNotFound, "内容不存在或已移除"
 	case MethodNotAllowed:
-		return http.StatusMethodNotAllowed, "请求方法不支持"
+		return http.StatusMethodNotAllowed, "无法执行此操作"
 	case Unauthenticated:
 		return http.StatusUnauthorized, "请先登录"
 	case PermissionDenied:
@@ -62,7 +62,7 @@ func (code Code) details() (int, string) {
 	case PhoneAlreadyBound:
 		return http.StatusConflict, "该手机号已绑定其他账号"
 	case DatabaseUnavailable:
-		return http.StatusServiceUnavailable, "数据库暂时不可用"
+		return http.StatusServiceUnavailable, "服务暂时不可用"
 	default:
 		return http.StatusInternalServerError, "服务暂时不可用"
 	}

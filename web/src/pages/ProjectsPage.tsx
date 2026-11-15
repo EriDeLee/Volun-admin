@@ -1,3 +1,4 @@
+import ValidatedForm from "../components/ValidatedForm.tsx";
 import ScrollRegion from "../components/ScrollRegion.tsx";
 import { asApiError } from "../lib/api.ts";
 import type { WorkspaceProps, ProjectList, CreateProject } from "../types.ts";
@@ -353,25 +354,30 @@ export default function ProjectsPage({
                 "认定时长",
                 data.summary.recognized_hours ?? "—",
                 "小时",
-                "时长模块暂未接入",
+                "已审核认定时长",
                 "clock",
               ],
             ] as const
-          ).map(([label, value, unit, sub, ic]) => (
-            <section key={label} className="activity-stat">
-              <div>
-                <span>{label}</span>
-                <span className="activity-stat-icon">
-                  <Icon name={ic} />
-                </span>
-              </div>
-              <strong>
-                {value}
-                <small>{unit}</small>
-              </strong>
-              <p>{sub}</p>
-            </section>
-          ))}
+          )
+            .filter(
+              ([, , , , icon]) =>
+                icon !== "clock" || data.summary.recognized_hours !== null,
+            )
+            .map(([label, value, unit, sub, ic]) => (
+              <section key={label} className="activity-stat">
+                <div>
+                  <span>{label}</span>
+                  <span className="activity-stat-icon">
+                    <Icon name={ic} />
+                  </span>
+                </div>
+                <strong>
+                  {value}
+                  <small>{unit}</small>
+                </strong>
+                <p>{sub}</p>
+              </section>
+            ))}
         </div>
       )}
       <section className="panel" aria-busy={loading}>
@@ -397,7 +403,7 @@ export default function ProjectsPage({
             待我处理
           </button>
         </div>
-        <form className="workspace-filters" onSubmit={search}>
+        <ValidatedForm className="workspace-filters" onSubmit={search}>
           <label className="activity-search">
             <Icon name="search" />
             <input
@@ -448,7 +454,7 @@ export default function ProjectsPage({
           >
             重置
           </button>
-        </form>
+        </ValidatedForm>
         <div className="filter-meta">
           <span role="status" aria-live="polite">
             {loading
@@ -459,7 +465,7 @@ export default function ProjectsPage({
                 ? "项目台账加载失败"
                 : `共 ${data?.total ?? 0} 个项目`}
           </span>
-          <span>保留 12 种业务状态 · 按更新时间倒序</span>
+          <span>按更新时间倒序</span>
         </div>
         {hasFilters && (
           <div className="active-filters" aria-label="已应用的筛选">
@@ -716,7 +722,7 @@ export default function ProjectsPage({
       </section>
       <footer className="activity-footer">
         <span>北京航空航天大学 · 志愿服务项目管理平台</span>
-        <span>{title} · 真实数据</span>
+        <span>{title}</span>
       </footer>
       {creating && (
         <Modal
@@ -727,7 +733,10 @@ export default function ProjectsPage({
           <p className="activity-modal-intro">
             先填写基础信息，项目将以「立项」状态保存。负责人为当前账号。
           </p>
-          <form onSubmit={createProject} className="activity-project-form">
+          <ValidatedForm
+            onSubmit={createProject}
+            className="activity-project-form"
+          >
             <div className="activity-form-fields">
               {fields.map((f) => (
                 <label key={f.key} className={f.full ? "full" : ""}>
@@ -787,7 +796,7 @@ export default function ProjectsPage({
                 {saving ? "正在创建…" : "创建项目"}
               </button>
             </div>
-          </form>
+          </ValidatedForm>
         </Modal>
       )}
     </WorkspaceShell>

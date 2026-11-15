@@ -74,7 +74,7 @@ export default function ProjectAccountPicker({
       {searched && (
         <p role="status">
           {items.length
-            ? `找到 ${items.length} 个可添加账号，请核对后选择。`
+            ? `找到 ${items.length} 个账号。`
             : "未找到可添加的账号，可继续手动填写。"}
         </p>
       )}
@@ -93,9 +93,6 @@ export default function ProjectAccountPicker({
           选择 {account.name} · {account.number} · {account.username}
         </button>
       ))}
-      <small>
-        最多显示20个匹配账号。选中后自动填写姓名、学号和绑定手机号，再选择场次与岗位保存。
-      </small>
     </fieldset>
   );
 }

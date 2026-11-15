@@ -1,3 +1,4 @@
+import { fetchData } from "./api.ts";
 import type { Project } from "../types.ts";
 
 export interface Position {
@@ -231,7 +232,7 @@ export async function request<T>(
   method = "POST",
   version?: number,
 ): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
+  return fetchData<T>(path, {
     credentials: "include",
     cache: "no-store",
     method: body === undefined ? "GET" : method,
@@ -247,15 +248,6 @@ export async function request<T>(
           },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const result = await response.json();
-  if (!response.ok || result.errcode) {
-    const error = Object.assign(
-      new Error(result.message || "请求失败，请重试"),
-      { status: response.status, code: result.errcode },
-    );
-    throw error;
-  }
-  return result.data as T;
 }
 export const approvalNames: Record<string, string> = {
   draft: "立项草稿",
@@ -268,8 +260,10 @@ export const attendanceNames: Record<string, string> = {
   checkout: "签退",
   absent: "缺席",
 };
-export const iso = (value: string) =>
-  value ? new Date(value).toISOString() : "";
+export const iso = (value: string) => {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : "";
+};
 
 export function sessionRangeError(basics: Basics): string {
   if (basics.ends_on < basics.starts_on)
@@ -302,7 +296,31 @@ export function sessionRangeError(basics: Basics): string {
 export const localTime = (value: string) => {
   if (!value) return "";
   const d = new Date(value);
+  if (!Number.isFinite(d.getTime())) return "";
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
     .toISOString()
     .slice(0, 16);
+};
+
+export const historyActionNames: Record<string, string> = {
+  "attendance.window": "调整签到设置",
+  "attendance.staff": "调整出勤记录",
+  "attendance.checkin": "签到",
+  "attendance.checkout": "签退",
+  "members.save": "保存成员名单",
+  "members.delete": "删除成员",
+  "members.export": "导出成员名单",
+  "form.configure": "调整问卷设置",
+  "form.response": "提交报名",
+  "hours.save": "保存服务时长",
+  "workflow.transition": "更新项目状态",
+  "material.save": "保存材料草稿",
+  "material.generate": "生成附件1",
+  "member.self_update": "修改本人报名信息",
+  "member.access": "调整报名访问方式",
+  "member.bind": "绑定报名账号",
+  "project.submit": "提交立项申请",
+  "project.basics.edit": "修改立项信息",
+  "project.change.request": "提交变更申请",
+  "project.application.decide": "审核项目申请",
 };

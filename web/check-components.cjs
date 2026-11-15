@@ -253,6 +253,17 @@ async function checkComponents(browser, baseURL, output) {
     return page;
   }
   async function audit(page, name) {
+    await page.evaluate(async () => {
+      await Promise.all(
+        document
+          .getAnimations()
+          .filter(
+            (animation) =>
+              animation.effect?.getComputedTiming().iterations !== Infinity,
+          )
+          .map((animation) => animation.finished.catch(() => undefined)),
+      );
+    });
     await page.addScriptTag({ path: require.resolve("axe-core/axe.min.js") });
     const result = await page.evaluate(async () => {
       const { violations } = await axe.run(document, {
@@ -315,6 +326,42 @@ async function checkComponents(browser, baseURL, output) {
       "Backdrop scroll must not move the page",
     );
     await audit(page, "account-modal");
+    await account
+      .getByRole("textbox", { name: "姓名", exact: true })
+      .fill("测试成员");
+    await account
+      .getByRole("textbox", { name: "学号 / 人员编号", exact: true })
+      .fill("00123");
+    await account
+      .getByRole("textbox", { name: "登录账号", exact: true })
+      .fill("new-member");
+    const password = account.getByLabel("初始密码", { exact: true });
+    await password.fill("short");
+    await account
+      .getByRole("button", { name: "添加成员", exact: true })
+      .click();
+    assert.equal(await password.getAttribute("aria-invalid"), "true");
+    assert.equal(await account.getByRole("alert").count(), 0);
+    assert.doesNotMatch(await account.innerText(), /字节|字符/);
+    await password.fill("测试密码");
+    assert.equal(await password.getAttribute("aria-invalid"), null);
+    await password.fill("测".repeat(25));
+    assert.equal((await password.inputValue()).length, 25);
+    await password.blur();
+    assert.equal(await password.getAttribute("aria-invalid"), "true");
+    assert.equal(
+      await password.evaluate((element) => {
+        const reference = document.createElement("span");
+        reference.style.color = "var(--danger)";
+        element.parentElement.append(reference);
+        const expected = getComputedStyle(reference).color;
+        reference.remove();
+        return getComputedStyle(element).borderTopColor === expected;
+      }),
+      true,
+      "Invalid passwords must visibly have the error border",
+    );
+    await audit(page, "account-password-error");
     await shot(page, "account-light");
     await page.keyboard.press("Escape");
     await account.waitFor({ state: "hidden" });
@@ -324,8 +371,8 @@ async function checkComponents(browser, baseURL, output) {
       .fill(
         "账号,姓名,学号,初始密码,用户组\nstudent,测试成员,00002,temporary-secret-123,formal_user",
       );
-    await page.getByRole("button", { name: "预检", exact: true }).click();
-    const preview = page.getByRole("region", { name: /成员导入预检/ });
+    await page.getByRole("button", { name: "检查名单", exact: true }).click();
+    const preview = page.getByRole("region", { name: /成员导入检查/ });
     await preview.waitFor();
     await preview.focus();
     await page.keyboard.press("ArrowDown");
@@ -374,6 +421,17 @@ async function checkComponents(browser, baseURL, output) {
       .waitFor();
     await tabs.getByRole("tab", { name: "成员名单", exact: true }).click();
     await page.getByText("测试志愿者", { exact: true }).waitFor();
+    await page
+      .getByLabel("从表格粘贴成员", { exact: true })
+      .fill("\t00123\t学院\t\t备注");
+    const pastedName = page.getByLabel("姓名，第 1 行", { exact: true });
+    assert.equal(await pastedName.getAttribute("aria-invalid"), "true");
+    await pastedName.fill("粘贴成员");
+    assert.equal(await pastedName.getAttribute("aria-invalid"), null);
+    assert.equal(
+      await page.getByLabel("编号，第 1 行", { exact: true }).inputValue(),
+      "00123",
+    );
     await audit(page, "workflow-members");
     await shot(page, "workflow-light");
     await page.getByRole("combobox", { name: "外观模式" }).selectOption("dark");
@@ -386,7 +444,7 @@ async function checkComponents(browser, baseURL, output) {
     const phone = page.getByRole("textbox", { name: "绑定手机号" });
     await phone.fill("123");
     await page.getByRole("button", { name: "更新绑定手机号" }).click();
-    await page.getByRole("alert").waitFor();
+    assert.equal(await page.getByRole("alert").count(), 0);
     assert.equal(await phone.getAttribute("aria-invalid"), "true");
     await audit(page, "profile-phone-error");
     await page.goto(`${baseURL}/recruitment`);

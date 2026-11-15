@@ -49,7 +49,7 @@
   --text-subtle: #92a2b9;
   --accent: #93b7ff;
   --accent-solid: #3568dc;
-  --accent-hover: #4478ed;
+  --accent-hover: #3769de;
   --accent-bg: #223653;
   --accent-border: #4b6da4;
   --border: #334258;
@@ -436,10 +436,8 @@ input[type="radio"] {
   border-color: var(--control-border);
 }
 :root
-  :is(
-    input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
-    select,
-    textarea
+  :is(input, select, textarea):where(
+    :not([type="checkbox"]):not([type="radio"]):not([type="file"])
   ) {
   border-color: var(--control-border);
 }
@@ -461,4 +459,9 @@ input[type="radio"] {
   .activity-tabs button.selected {
     border-bottom-color: Highlight;
   }
+}
+
+.import-cell-error {
+  color: var(--danger);
+  box-shadow: inset 0 -2px var(--danger);
 }

@@ -1,4 +1,4 @@
-import type { WorkspaceProps } from "../types.ts";
+import type { AuthSession, WorkspaceProps } from "../types.ts";
 import React, { useState } from "react";
 import Icon from "./Icon.tsx";
 import Sidebar from "./Sidebar.tsx";
@@ -17,7 +17,8 @@ export default function WorkspaceShell({
   actions,
   space = "工作空间",
   contentClassName = "activity-content",
-}: Omit<WorkspaceProps, "api" | "onSessionIssue"> & {
+}: Omit<WorkspaceProps, "api" | "onSessionIssue" | "session"> & {
+  session: AuthSession | null;
   route: string;
   crumb: string;
   children: React.ReactNode;
@@ -64,14 +65,27 @@ export default function WorkspaceShell({
               })}
             </span>
             {actions}
-            <button
-              className="button secondary"
-              onClick={logout}
-              disabled={logoutPending}
-            >
-              <Icon name="logout" />
-              {logoutPending ? "正在退出…" : "退出登录"}
-            </button>
+            {session ? (
+              <button
+                className="button secondary"
+                onClick={logout}
+                disabled={logoutPending}
+              >
+                <Icon name="logout" />
+                {logoutPending ? "正在退出…" : "退出登录"}
+              </button>
+            ) : (
+              <a
+                className="button secondary"
+                href="/login"
+                onClick={(event) => {
+                  event.preventDefault();
+                  onNavigate("/login");
+                }}
+              >
+                登录平台
+              </a>
+            )}
           </div>
         </header>
         <main id="workspace-content" className={contentClassName} tabIndex={-1}>

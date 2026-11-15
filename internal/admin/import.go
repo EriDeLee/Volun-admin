@@ -20,14 +20,15 @@ import (
 )
 
 type importRow struct {
-	Line     int      `json:"line"`
-	Username string   `json:"username"`
-	Name     string   `json:"name"`
-	ID       string   `json:"id"`
-	Phone    string   `json:"phone"`
-	Groups   []string `json:"groups"`
-	Error    string   `json:"error"`
-	password string
+	Line       int      `json:"line"`
+	Username   string   `json:"username"`
+	Name       string   `json:"name"`
+	ID         string   `json:"id"`
+	Phone      string   `json:"phone"`
+	Groups     []string `json:"groups"`
+	Error      string   `json:"error"`
+	ErrorField string   `json:"error_field,omitempty"`
+	password   string
 }
 
 type importRequest struct {
@@ -126,19 +127,21 @@ func (s *Service) importUsers(c *gin.Context, req importRequest) {
 		row.Groups, ok = normalizeGroups(groups)
 		switch {
 		case row.Username == "" || utf8.RuneCountInString(row.Username) > 120 || strings.ContainsAny(row.Username, "/\\") || strings.IndexFunc(row.Username, unicode.IsSpace) >= 0 || strings.IndexFunc(row.Username, unicode.IsControl) >= 0:
-			row.Error = "账号必填，最多120字，不能含空白、控制字符或斜杠"
-		case row.Name == "" || utf8.RuneCountInString(row.Name) > 80 || row.ID == "" || utf8.RuneCountInString(row.ID) > 120:
-			row.Error = "姓名及学号必填，分别最多80字、120字"
+			row.Error, row.ErrorField = "请修改账号", "username"
+		case row.Name == "" || utf8.RuneCountInString(row.Name) > 80:
+			row.Error, row.ErrorField = "请修改姓名", "name"
+		case row.ID == "" || utf8.RuneCountInString(row.ID) > 120:
+			row.Error, row.ErrorField = "请修改学号", "id"
 		case len(row.password) < 12 || len(row.password) > 72:
-			row.Error = "初始密码须为12至72字节"
+			row.Error, row.ErrorField = "初始密码有误", "password"
 		case !ok:
-			row.Error = "用户组无效，请使用固定用户组代码，以 | 分隔"
+			row.Error, row.ErrorField = "用户组有误", "groups"
 		case seen[row.Username]:
-			row.Error = "文件内账号重复"
+			row.Error, row.ErrorField = "文件内账号重复", "username"
 		case !phoneOK:
-			row.Error = "手机号须为11位有效手机号码"
+			row.Error, row.ErrorField = "手机号有误", "phone"
 		case row.Phone != "" && seenPhones[row.Phone]:
-			row.Error = "文件内手机号重复"
+			row.Error, row.ErrorField = "文件内手机号重复", "phone"
 		}
 		seen[row.Username] = true
 		if row.Phone != "" {
@@ -178,11 +181,11 @@ func (s *Service) importUsers(c *gin.Context, req importRequest) {
 					return err
 				}
 				if count != 0 {
-					rows[i].Error = "手机号已绑定其他账号"
+					rows[i].Error, rows[i].ErrorField = "手机号已绑定其他账号", "phone"
 				}
 			}
 			if taken[rows[i].Username] {
-				rows[i].Error = "账号已存在，不会覆盖"
+				rows[i].Error, rows[i].ErrorField = "账号已存在", "username"
 			}
 			if rows[i].Error != "" {
 				valid = false

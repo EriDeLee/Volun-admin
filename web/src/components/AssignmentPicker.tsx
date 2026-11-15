@@ -15,7 +15,6 @@ export default function AssignmentPicker({
   return (
     <fieldset className="assignment-picker" disabled={disabled}>
       <legend>参加场次和岗位（可多选）</legend>
-      <p>勾选要参加的岗位，可以选择多个场次或同场次的多个岗位。</p>
       {!sessions.length && <p>暂无可选场次，请联系项目管理员。</p>}
       {sessions.map((session) => (
         <section className="assignment-session" key={session.id}>

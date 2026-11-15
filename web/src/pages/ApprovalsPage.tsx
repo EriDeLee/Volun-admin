@@ -1,3 +1,4 @@
+import ValidatedForm from "../components/ValidatedForm.tsx";
 import { useEffect, useState } from "react";
 import type { WorkspaceProps, Project } from "../types.ts";
 import type { Workflow } from "../lib/workflow.ts";
@@ -78,7 +79,7 @@ export default function ApprovalsPage(props: WorkspaceProps) {
           </div>
           <span>立项申请 / 基础信息变更</span>
         </div>
-        <form
+        <ValidatedForm
           className="approvals-toolbar"
           onSubmit={(e) => {
             e.preventDefault();
@@ -111,7 +112,7 @@ export default function ApprovalsPage(props: WorkspaceProps) {
               清空筛选
             </button>
           )}
-        </form>
+        </ValidatedForm>
         <p className="approvals-summary" role="status">
           {loading
             ? "正在加载申请…"

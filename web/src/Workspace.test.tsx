@@ -107,6 +107,7 @@ function server() {
     if (u.pathname.startsWith("/api/v1/admin/users")) {
       const adminUser = {
         username: "manager",
+        phone: "13800000001",
         name: "测试负责人",
         id: "00123",
         groups: ["super_admin"],
@@ -275,15 +276,12 @@ test("restores deep project route and does not reveal internal subject", async (
   await screen.findByRole("heading", { name: "成员名单" });
   expect(location.pathname + location.search).toBe("/projects/p1?tab=recruit");
   expect(document.body.textContent).not.toContain(session.user.sub);
-  await userEvent.click(
-    screen.getByRole<HTMLButtonElement>("tab", { name: "附件3" }),
-  );
-  expect(await screen.findByText("功能待完善")).toBeTruthy();
+  expect(screen.queryByRole("tab", { name: "附件3" })).toBeNull();
   expect(screen.queryByRole("button", { name: "通过" })).toBeNull();
 });
 
 test.each([
-  ["hours", "时长管理", "计时与时长"],
+  ["hours", "时长管理", "服务时长"],
   ["materials", "项目材料", "附件1"],
 ])(
   "%s keeps its navigation active when choosing a project",
@@ -366,16 +364,12 @@ test("activity administrator can view members but cannot recruit or maintain hou
   render(<App />);
   await screen.findByRole("heading", { name: "成员名单" });
   expect(screen.queryByRole("button", { name: "保存成员" })).toBeNull();
-  expect(screen.queryByRole("tab", { name: "招募问卷与二维码" })).toBeNull();
+  expect(screen.queryByRole("tab", { name: "报名问卷" })).toBeNull();
   expect(screen.queryByRole("link", { name: "时长管理" })).toBeNull();
   await userEvent.click(screen.getByRole("tab", { name: "现场出勤" }));
-  expect(
-    screen.getByRole("button", { name: "保存窗口并更新二维码" }),
-  ).toBeTruthy();
-  await userEvent.click(screen.getByRole("tab", { name: "计时与时长" }));
-  expect(
-    screen.queryByRole("button", { name: "保存时长 / 批量补录" }),
-  ).toBeNull();
+  expect(screen.getByRole("button", { name: "保存设置" })).toBeTruthy();
+  await userEvent.click(screen.getByRole("tab", { name: "服务时长" }));
+  expect(screen.queryByRole("button", { name: "保存时长" })).toBeNull();
 });
 
 test("data administrator persists questionnaire changes with the current workflow version", async () => {
@@ -403,7 +397,7 @@ test("data administrator persists questionnaire changes with the current workflo
   render(<App />);
   await screen.findByRole("heading", { name: "问卷与二维码" });
   await userEvent.click(screen.getByRole("button", { name: "保存问卷" }));
-  await screen.findByText("已保存到服务器。");
+  await screen.findByText("已保存。");
   const call = fetch.mock.calls.find(([url]) => url.endsWith("/forms"));
   expect(call?.[1]?.method).toBe("PUT");
   expect(new Headers(call?.[1]?.headers).get("X-Workflow-Version")).toBe("3");
@@ -440,4 +434,41 @@ test("expired session on a project request returns to login", async () => {
   expect(screen.getByRole<HTMLButtonElement>("alert").textContent).toBe(
     "登录已失效，请重新登录。",
   );
+});
+
+test("clearing a bound phone does not unbind it without the explicit choice", async () => {
+  const original = server();
+  fetch.mockImplementation(async (url, options = {}) =>
+    url.endsWith("/auth/me")
+      ? reply({
+          ...session,
+          user: { ...session.user, groups: ["super_admin"] },
+        })
+      : original(url, options),
+  );
+  history.replaceState(null, "", "/users");
+  render(<App />);
+  await userEvent.click(await screen.findByRole("button", { name: "编辑" }));
+  const phone = screen.getByRole<HTMLInputElement>("textbox", {
+    name: "绑定手机号",
+  });
+  await userEvent.clear(phone);
+  await userEvent.click(screen.getByRole("button", { name: "保存变更" }));
+  expect(phone.getAttribute("aria-invalid")).toBe("true");
+  expect(
+    fetch.mock.calls.some(([, options]) => options?.method === "PATCH"),
+  ).toBe(false);
+  await userEvent.click(
+    screen.getByRole("checkbox", { name: "解除手机号绑定" }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "保存变更" }));
+  await waitFor(() =>
+    expect(
+      fetch.mock.calls.some(([, options]) => options?.method === "PATCH"),
+    ).toBe(true),
+  );
+  const call = fetch.mock.calls.find(
+    ([, options]) => options?.method === "PATCH",
+  );
+  expect(JSON.parse(String(call?.[1]?.body)).phone).toBe("");
 });

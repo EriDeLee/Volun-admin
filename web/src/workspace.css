@@ -1751,6 +1751,9 @@ button:disabled {
   width: 260px;
   max-width: 100%;
 }
+.public-page.workflow-participant {
+  min-height: 0;
+}
 .workflow-participant .public-form {
   max-width: 720px;
   margin: 20px auto;

@@ -18,7 +18,7 @@ export default function Sidebar({
   open = false,
   onClose,
 }: {
-  session: AuthSession;
+  session: AuthSession | null;
   route: string;
   onNavigate: (path: string) => void;
   open?: boolean;
@@ -35,12 +35,12 @@ export default function Sidebar({
     wasMobile.current = mobile;
   }, [mobile, onClose]);
 
-  const groups = session.user.groups || [];
+  const groups = session?.user.groups || [];
   const manager = canManage(session);
   const dataManager = groups.some(
     (g) => g === "super_admin" || g === "data_admin",
   );
-  const name = session.user.name || session.user.username || "平台用户";
+  const name = session?.user.name || session?.user.username || "平台用户";
   const go = (path: string) => {
     onClose();
     onNavigate(path);
@@ -58,17 +58,18 @@ export default function Sidebar({
           : []),
       ]
     : [];
-  const management = canReadUsers(session)
-    ? [
-        {
-          path: "/users",
-          label: groups.includes("super_admin")
-            ? "成员管理"
-            : "账号目录（只读）",
-          icon: "people",
-        },
-      ]
-    : [];
+  const management =
+    session && canReadUsers(session)
+      ? [
+          {
+            path: "/users",
+            label: groups.includes("super_admin")
+              ? "成员管理"
+              : "账号目录（只读）",
+            icon: "people",
+          },
+        ]
+      : [];
   const personal = [
     { path: "/recruitment", label: "招募活动", icon: "heart" },
     { path: "/my-services", label: "我的服务", icon: "clock" },
@@ -98,7 +99,7 @@ export default function Sidebar({
   const content = (
     <>
       <div className="sidebar-heading">
-        <Brand onNavigate={() => go(homePath(session))} />
+        <Brand onNavigate={() => go(session ? homePath(session) : "/login")} />
         {mobile && (
           <button
             type="button"
@@ -142,16 +143,18 @@ export default function Sidebar({
           让每一步协作更有条理。
         </p>
       </div>
-      <div className="sidebar-user">
-        <span className="avatar">{name.slice(0, 1)}</span>
-        <div>
-          <strong>{name}</strong>
-          <small>
-            {groups.map((g) => groupNames[g] || "其他用户组").join("、") ||
-              "暂未分配用户组"}
-          </small>
+      {session && (
+        <div className="sidebar-user">
+          <span className="avatar">{name.slice(0, 1)}</span>
+          <div>
+            <strong>{name}</strong>
+            <small>
+              {groups.map((g) => groupNames[g] || "其他用户组").join("、") ||
+                "暂未分配用户组"}
+            </small>
+          </div>
         </div>
-      </div>
+      )}
     </>
   );
 

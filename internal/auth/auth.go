@@ -159,7 +159,7 @@ func (s *Service) SetInitialPassword(c *gin.Context) {
 	}
 	u.PasswordHash = string(hash)
 	u.PasswordSetupRequired = false
-	errhandler.OK(c, dto.AuthResponse{User: userJSON(u), AuthMethod: "sso", PasswordSetupRequired: false})
+	errhandler.OK(c, dto.AuthResponse{User: userJSON(u), AuthMethod: "session", PasswordSetupRequired: false})
 }
 
 func (s *Service) Logout(c *gin.Context) {

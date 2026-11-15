@@ -250,33 +250,32 @@ test("member deletion requires confirmation and refreshes the roster", async () 
   expect(screen.queryByRole("button", { name: "删除" })).toBeNull();
 });
 
-test("navigation follows the activity sequence and attachment3 is a placeholder", async () => {
+test("navigation excludes unfinished attachment3 and redirects its deep link", async () => {
   vi.mocked(request).mockImplementation(async (path) =>
     path.endsWith("/history")
       ? ({ events: [], materials: [] } as never)
       : (initial() as never),
   );
   render(<WorkflowPage {...props} initialTab="review" />);
-  await screen.findByRole("heading", { name: "附件3" });
+  await screen.findByRole("heading", { name: "项目基础信息" });
   expect(
     screen.getAllByRole("tab").map((tab) => tab.getAttribute("aria-label")),
   ).toEqual([
     "立项",
-    "招募问卷与二维码",
+    "报名问卷",
     "成员名单",
     "附件1",
     "现场出勤",
-    "计时与时长",
-    "附件3",
+    "服务时长",
     "操作记录",
   ]);
   expect(
     screen.getByRole("tab", { name: "现场出勤" }).hasAttribute("disabled"),
   ).toBe(true);
   expect(
-    screen.getByRole("tab", { name: "计时与时长" }).hasAttribute("disabled"),
+    screen.getByRole("tab", { name: "服务时长" }).hasAttribute("disabled"),
   ).toBe(true);
-  expect(screen.getByText("功能待完善")).toBeTruthy();
+  expect(screen.queryByText("功能待完善")).toBeNull();
   expect(screen.queryByRole("combobox", { name: "目标阶段" })).toBeNull();
   expect(screen.queryByRole("button", { name: "确认流程处理" })).toBeNull();
 });
@@ -295,11 +294,9 @@ test("direct hours links show a reason before the first session ends", async () 
       : (data as never),
   );
   render(<WorkflowPage {...props} initialTab="hours" />);
-  await screen.findByRole("heading", { name: "计时与时长尚未开放" });
+  await screen.findByRole("heading", { name: "服务时长尚未开放" });
   expect(screen.getByText(/首场“上午”结束后开放/)).toBeTruthy();
-  expect(
-    screen.queryByRole("button", { name: "保存时长 / 批量补录" }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "保存时长" })).toBeNull();
   expect(
     screen.getByRole("tab", { name: "现场出勤" }).hasAttribute("disabled"),
   ).toBe(false);
@@ -315,7 +312,7 @@ test("preparation confirmation requires both a roster and generated attachment1"
   );
   render(<WorkflowPage {...props} />);
   const button = await screen.findByRole("button", {
-    name: "确认准备完成，开放现场出勤",
+    name: "确认准备完成",
   });
   expect(button.hasAttribute("disabled")).toBe(true);
   expect(screen.getByText("待录入成员名单")).toBeTruthy();
@@ -352,7 +349,7 @@ test.each([false, true])(
     render(<WorkflowPage {...props} />);
     await screen.findByDisplayValue("原问卷");
     await userEvent.click(screen.getByRole("button", { name: "保存问卷" }));
-    await screen.findByText("已保存到服务器。");
+    await screen.findByText("已保存。");
     expect(writes).toBe(race ? 2 : 1);
   },
 );
@@ -372,7 +369,7 @@ test("concurrent form edit preserves the draft and requires review before writin
   await userEvent.type(title, "我的草稿");
   await userEvent.click(screen.getByRole("button", { name: "保存问卷" }));
   expect((await screen.findByRole("alert")).textContent).toContain(
-    "填写内容已保留",
+    "内容有更新，尚未保存",
   );
   expect(screen.getByDisplayValue("我的草稿")).toBeTruthy();
   expect(
@@ -660,4 +657,124 @@ test("identity review excludes account registrations", async () => {
   await screen.findByText("账号身份已确认");
   expect(screen.queryByRole("option", { name: /账号成员/ })).toBeNull();
   expect(screen.getByRole("option", { name: /手填成员.*待核实/ })).toBeTruthy();
+});
+
+test("a completed save stays successful when history refresh fails", async () => {
+  let saved = false;
+  const data = initial();
+  vi.mocked(request).mockImplementation(async (path) => {
+    if (path.endsWith("/history")) {
+      if (saved) throw new Error("offline");
+      return { events: [], materials: [] } as never;
+    }
+    if (path.endsWith("/forms")) saved = true;
+    return data as never;
+  });
+  render(<WorkflowPage {...props} />);
+  await screen.findByDisplayValue("原问卷");
+  await userEvent.click(screen.getByRole("button", { name: "保存问卷" }));
+  expect((await screen.findByRole("status")).textContent).toBe("已保存。");
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "已保存，操作记录刷新失败。",
+  );
+  expect(
+    vi.mocked(request).mock.calls.filter(([path]) => path.endsWith("/forms")),
+  ).toHaveLength(1);
+});
+
+test("an unanswered intention requires a choice and null hours have no unit", async () => {
+  history.replaceState(null, "", "/signup?project=p&form=f");
+  const own = {
+    member: {
+      id: "m",
+      name: "测试",
+      number: "001",
+      intent: "未填写",
+      platform: "",
+      assignments: [],
+    },
+    sessions,
+    attendance: [],
+    hours: [{ member_id: "m", recognized: null }],
+    project: "测试项目",
+  };
+  vi.mocked(request).mockImplementation(async (path, body) => {
+    if (path === "/auth/me")
+      throw Object.assign(new Error("未登录"), { status: 401 });
+    if (path.endsWith("/forms/f"))
+      return {
+        project: "测试项目",
+        kind: "intent",
+        form: initial().state.form,
+        sessions,
+      } as never;
+    if (body) return {} as never;
+    return own as never;
+  });
+  render(<ParticipantPage />);
+  const intent = await screen.findByRole<HTMLSelectElement>("combobox", {
+    name: "是否申请录入时长",
+  });
+  expect(intent.value).toBe("");
+  await userEvent.click(screen.getByRole("button", { name: "保存" }));
+  expect(intent.getAttribute("aria-invalid")).toBe("true");
+  expect(vi.mocked(request).mock.calls.some(([, body]) => !!body)).toBe(false);
+  expect(screen.getByText("认定时长：未认定")).toBeTruthy();
+  expect(document.body.textContent).not.toContain("未认定 小时");
+  await userEvent.selectOptions(intent, "不申请");
+  await userEvent.click(screen.getByRole("button", { name: "保存" }));
+  await screen.findByText("已保存。");
+  expect(request).toHaveBeenCalledWith(
+    "/public/projects/p/me",
+    expect.objectContaining({ intent: "不申请" }),
+    "PUT",
+  );
+});
+
+test("opening a saved registration link validates the project and exchanges only its credential", async () => {
+  history.replaceState(null, "", "/signup?project=p");
+  let opened = false;
+  vi.mocked(request).mockImplementation(async (path) => {
+    if (path === "/auth/me")
+      throw Object.assign(new Error("未登录"), { status: 401 });
+    if (path.endsWith("/access")) {
+      opened = true;
+      return {} as never;
+    }
+    if (!opened) throw Object.assign(new Error("未关联"), { status: 403 });
+    return {
+      member: {
+        id: "m",
+        name: "测试成员",
+        number: "001",
+        intent: "未填写",
+        platform: "",
+      },
+      sessions: [],
+      attendance: [],
+      hours: [],
+      project: "测试项目",
+    } as never;
+  });
+  render(<ParticipantPage />);
+  const user = userEvent.setup();
+  const link = await screen.findByRole("textbox", { name: "报名修改链接" });
+  await user.type(
+    link,
+    `${location.origin}/signup?project=other#credential=secret-grant`,
+  );
+  await user.click(screen.getByRole("button", { name: "打开报名记录" }));
+  expect(link.getAttribute("aria-invalid")).toBe("true");
+  expect(opened).toBe(false);
+  await user.clear(link);
+  await user.type(
+    link,
+    `${location.origin}/signup?project=p#credential=secret-grant`,
+  );
+  await user.click(screen.getByRole("button", { name: "打开报名记录" }));
+  await screen.findByRole("heading", { name: "本人报名记录" });
+  expect(request).toHaveBeenCalledWith("/public/projects/p/access", {
+    credential: "secret-grant",
+  });
+  expect(screen.queryByRole("button", { name: "关联当前账号" })).toBeNull();
 });

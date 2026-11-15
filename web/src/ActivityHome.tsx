@@ -1,3 +1,4 @@
+import ValidatedForm from "./components/ValidatedForm.tsx";
 import ScrollRegion from "./components/ScrollRegion.tsx";
 import WorkspaceShell from "./components/WorkspaceShell.tsx";
 import Modal from "./components/Modal.tsx";
@@ -371,9 +372,7 @@ export default function ActivityHome({
                     "已审核认定",
                     data.summary.recognized_hours ?? "—",
                     "小时",
-                    data.summary.recognized_hours === null
-                      ? "时长模块暂未接入"
-                      : "仅统计已审核认定时长",
+                    "已审核认定时长",
                     "clock",
                   ],
                   [
@@ -384,21 +383,26 @@ export default function ActivityHome({
                     "check",
                   ],
                 ] as const
-              ).map(([label, value, unit, sub, ic]) => (
-                <section key={label} className="activity-stat">
-                  <div>
-                    <span>{label}</span>
-                    <span className="activity-stat-icon">
-                      <ActivityIcon name={ic} />
-                    </span>
-                  </div>
-                  <strong>
-                    {value}
-                    <small>{unit}</small>
-                  </strong>
-                  <p>{sub}</p>
-                </section>
-              ))}
+              )
+                .filter(
+                  ([, , , , icon]) =>
+                    icon !== "clock" || data.summary.recognized_hours !== null,
+                )
+                .map(([label, value, unit, sub, ic]) => (
+                  <section key={label} className="activity-stat">
+                    <div>
+                      <span>{label}</span>
+                      <span className="activity-stat-icon">
+                        <ActivityIcon name={ic} />
+                      </span>
+                    </div>
+                    <strong>
+                      {value}
+                      <small>{unit}</small>
+                    </strong>
+                    <p>{sub}</p>
+                  </section>
+                ))}
             </div>
             <div className="activity-grid">
               <div className="activity-column">
@@ -653,7 +657,10 @@ export default function ActivityHome({
           <p className="activity-modal-intro">
             先填写基础信息，项目将以「立项」状态保存。负责人为当前账号。
           </p>
-          <form onSubmit={createProject} className="activity-project-form">
+          <ValidatedForm
+            onSubmit={createProject}
+            className="activity-project-form"
+          >
             <div className="activity-form-fields">
               {fields.map((f) => (
                 <label key={f.key} className={f.full ? "full" : ""}>
@@ -713,7 +720,7 @@ export default function ActivityHome({
                 {saving ? "正在创建…" : "创建项目"}
               </button>
             </div>
-          </form>
+          </ValidatedForm>
         </Modal>
       )}
       {detail && (

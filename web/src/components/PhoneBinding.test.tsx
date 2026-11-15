@@ -10,7 +10,7 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-test("validation errors describe the phone field and clear when editing", async () => {
+test("invalid phone stays marked until corrected without sending a request", async () => {
   vi.mocked(request).mockRejectedValueOnce(
     Object.assign(new Error("手机号格式不正确"), { status: 400 }),
   );
@@ -19,13 +19,15 @@ test("validation errors describe the phone field and clear when editing", async 
   const input = screen.getByRole("textbox", { name: "绑定手机号" });
   await user.type(input, "123");
   await user.click(screen.getByRole("button", { name: "绑定手机号" }));
-  const error = await screen.findByRole("alert");
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(request).not.toHaveBeenCalled();
   expect(input.getAttribute("aria-invalid")).toBe("true");
   expect(document.activeElement).toBe(input);
-  expect(input.getAttribute("aria-describedby")?.split(" ")).toContain(
-    error.id,
-  );
+
   await user.type(input, "4");
+  expect(input.getAttribute("aria-invalid")).toBe("true");
+  await user.clear(input);
+  await user.type(input, "13800000001");
   expect(input.hasAttribute("aria-invalid")).toBe(false);
   expect(screen.queryByRole("alert")).toBeNull();
 });
