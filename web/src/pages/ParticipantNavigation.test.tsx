@@ -260,6 +260,66 @@ test("a closed form keeps guests unauthenticated when navigating away", async ()
   expect(screen.getByLabelText("账号")).toBeTruthy();
 });
 
+test.each([
+  ["我的服务", "/my-services", false],
+  ["招募活动", "/recruitment", false],
+  ["个人信息", "/profile", false],
+  ["我的服务", "/my-services", true],
+] as const)(
+  "leaving signup for %s at %s (history: %s) restores the session before showing the destination",
+  async (title, destination, back) => {
+    history.replaceState(null, "", destination);
+    history.pushState(null, "", "/signup?project=p1");
+    const reply = (data: unknown, status = 200) => ({
+      ok: status === 200,
+      status,
+      json: async () => ({ errcode: status === 200 ? 0 : 200001, data }),
+    });
+    let releaseOld!: (value: ReturnType<typeof reply>) => void;
+    let releaseCurrent!: (value: ReturnType<typeof reply>) => void;
+    const oldRequest = new Promise<ReturnType<typeof reply>>((resolve) => {
+      releaseOld = resolve;
+    });
+    const currentRequest = new Promise<ReturnType<typeof reply>>((resolve) => {
+      releaseCurrent = resolve;
+    });
+    const restored = {
+      ...session,
+      user: { ...session.user, groups: ["formal_user"] },
+    };
+    let sessionRequests = 0;
+    const fetcher = vi.fn(async (url: string) => {
+      if (url.endsWith("/auth/me"))
+        return ++sessionRequests === 1 ? oldRequest : currentRequest;
+      if (url.endsWith("/volunteer/projects")) return reply({ items: [] });
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    render(<App />);
+    if (back) {
+      await act(async () => {
+        history.back();
+        await new Promise<void>((resolve) =>
+          window.addEventListener("popstate", () => resolve(), { once: true }),
+        );
+      });
+    } else {
+      await userEvent.click(screen.getByRole("link", { name: title }));
+    }
+    expect(screen.queryByLabelText("账号")).toBeNull();
+    expect(
+      screen.getByRole("heading", { name: "正在确认登录状态" }),
+    ).toBeTruthy();
+    await act(async () => releaseCurrent(reply(restored)));
+    await screen.findByRole("heading", { name: title });
+    await act(async () => releaseOld(reply({}, 401)));
+    expect(screen.getByRole("heading", { name: title })).toBeTruthy();
+    expect(location.pathname).toBe(destination);
+    expect(sessionRequests).toBe(2);
+    expect(screen.queryByLabelText("账号")).toBeNull();
+  },
+);
+
 test.each(["unauthenticated", "authenticated", "setup-required"])(
   "a late %s signup response cannot replace a newer login after navigation",
   async (oldResponse) => {

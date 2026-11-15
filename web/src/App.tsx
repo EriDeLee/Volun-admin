@@ -141,8 +141,10 @@ function Application() {
       new URLSearchParams(location.search).get("project")
     )
       setChecking(false);
-    else loadSession(true);
-  }, []);
+    // A public signup link skips application-level session recovery. Recheck
+    // when leaving it before the participant request has restored the session.
+    else if (!session && (pathname !== "/login" || checking)) loadSession(true);
+  }, [route]);
   const login = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (busy.current) return;
@@ -353,7 +355,7 @@ function Application() {
         </footer>
       </main>
     );
-  if (checking || startupError)
+  if (checking || startupError || (!session && pathname !== "/login"))
     return (
       <main className="loading-page">
         <Brand />
