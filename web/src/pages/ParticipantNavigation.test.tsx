@@ -211,3 +211,63 @@ test("logging out from a participant page clears the app session", async () => {
     expect.objectContaining({ method: "POST" }),
   );
 });
+
+test.each(["unauthenticated", "authenticated", "setup-required"])(
+  "a late %s signup response cannot replace a newer login after navigation",
+  async (oldResponse) => {
+    history.replaceState(null, "", "/signup?project=p1");
+    sessionStorage.clear();
+    const reply = (data: unknown, status = 200) => ({
+      ok: status === 200,
+      status,
+      json: async () => ({ errcode: status === 200 ? 0 : 200001, data }),
+    });
+    let release!: (value: ReturnType<typeof reply>) => void;
+    const pending = new Promise<ReturnType<typeof reply>>((resolve) => {
+      release = resolve;
+    });
+    const newSession = {
+      user: {
+        username: "student",
+        name: "新登录成员",
+        id: "123",
+        phone: "13800138000",
+        groups: ["formal_user"],
+      },
+      password_setup_required: false,
+    };
+    const fetcher = vi.fn(async (url: string) => {
+      if (url.endsWith("/auth/me")) return pending;
+      if (url.endsWith("/auth/login")) return reply(newSession);
+      if (url.endsWith("/volunteer/projects")) return reply({ items: [] });
+      throw new Error(`Unexpected request after navigation: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    render(<App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("link", { name: "登录平台" }));
+    await user.type(screen.getByLabelText("账号"), "student");
+    await user.type(screen.getByLabelText("密码"), "valid-password");
+    await user.click(screen.getByRole("button", { name: "登录平台" }));
+    await screen.findByRole("heading", { name: "招募活动" });
+    await act(async () => {
+      release(
+        oldResponse === "unauthenticated"
+          ? reply({}, 401)
+          : reply({
+              ...session,
+              password_setup_required: oldResponse === "setup-required",
+            }),
+      );
+    });
+    expect(screen.getByRole("heading", { name: "招募活动" })).toBeTruthy();
+    expect(screen.getByText("新登录成员")).toBeTruthy();
+    expect(location.pathname).toBe("/recruitment");
+    expect(sessionStorage.getItem("participant_return")).toBeNull();
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      "/api/v1/auth/me",
+      "/api/v1/auth/login",
+      "/api/v1/volunteer/projects",
+    ]);
+  },
+);

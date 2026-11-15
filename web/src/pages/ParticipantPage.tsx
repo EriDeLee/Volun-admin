@@ -1,6 +1,6 @@
 import ValidatedForm from "../components/ValidatedForm.tsx";
 import { VolunteerGuarantees } from "../components/VolunteerGuarantees.tsx";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import WorkspaceShell from "../components/WorkspaceShell.tsx";
 import {
   request,
@@ -27,6 +27,7 @@ export default function ParticipantPage({
   onNavigate?: (path: string) => void;
   onSessionChange?: (session: AuthSession | null) => void;
 } = {}) {
+  const lifetime = useRef({ active: false });
   const [loading, setLoading] = useState(true);
   const params = new URLSearchParams(location.search),
     project = params.get("project") || "",
@@ -36,6 +37,7 @@ export default function ParticipantPage({
   const base = `/public/projects/${encodeURIComponent(project)}`;
   const [identity, setIdentity] = useState<AuthSession | null>(null);
   const updateIdentity = (session: AuthSession | null) => {
+    if (!lifetime.current.active) return;
     setIdentity(session);
     onSessionChange?.(session);
   };
@@ -84,16 +86,25 @@ export default function ParticipantPage({
   const [loggingOut, setLoggingOut] = useState(false);
   const [key] = useState(() => crypto.randomUUID());
   const continueSetup = () => {
+    if (!lifetime.current.active) return;
     sessionStorage.setItem(
       "participant_return",
       location.pathname + location.search,
     );
     location.href = "/set-password";
   };
-  const refresh = async () => {
-    if (formID) setForm(await request(`${base}/forms/${formID}`));
+  const refresh = async (current = lifetime.current) => {
+    if (!current.active) return;
+    if (formID) {
+      const published = await request<NonNullable<typeof form>>(
+        `${base}/forms/${formID}`,
+      );
+      if (!current.active) return;
+      setForm(published);
+    }
     try {
       const authenticated = await request<AuthSession>("/auth/me");
+      if (!current.active) return;
       if (authenticated.password_setup_required) {
         continueSetup();
         return;
@@ -106,30 +117,35 @@ export default function ParticipantPage({
         phone: authenticated.user.phone || previous.phone,
       }));
     } catch (cause) {
+      if (!current.active) return;
       if ((cause as { status?: number }).status !== 401) throw cause;
       updateIdentity(null);
     }
-    if (sessionID)
-      setScan(
-        await request(
-          `${base}/sessions/${sessionID}/scan?token=${encodeURIComponent(token)}`,
-        ),
+    if (sessionID) {
+      const scanned = await request<NonNullable<typeof scan>>(
+        `${base}/sessions/${sessionID}/scan?token=${encodeURIComponent(token)}`,
       );
+      if (!current.active) return;
+      setScan(scanned);
+    }
     try {
       const me = await request<NonNullable<typeof own>>(`${base}/me`);
+      if (!current.active) return;
       setOwn(me);
       setMember({ ...me.member, notes: me.member.notes || "" });
       setAssignments(memberAssignments(me.member));
       setIntent(me.member.intent === "未填写" ? "" : me.member.intent);
       setPlatform(me.member.platform);
     } catch (cause) {
+      if (!current.active) return;
       const status = (cause as { status?: number }).status;
       if (status !== 401 && status !== 403 && status !== 404) throw cause;
       setOwn(null);
     }
   };
   useEffect(() => {
-    let active = true;
+    const current = { active: true };
+    lifetime.current = current;
     setLoading(true);
     (async () => {
       const hash = new URLSearchParams(location.hash.slice(1));
@@ -137,20 +153,21 @@ export default function ParticipantPage({
       if (grant) {
         history.replaceState(null, "", location.pathname + location.search);
         await request(`${base}/access`, { credential: grant });
+        if (!current.active) return;
       }
       if (params.has("sso")) {
         setError("学校统一认证未完成，可重试，或使用账号密码登录、手动填写。");
       }
-      await refresh();
+      await refresh(current);
     })()
       .catch((e) => {
-        if (active) setError(e.message);
+        if (current.active) setError(e.message);
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (current.active) setLoading(false);
       });
     return () => {
-      active = false;
+      current.active = false;
     };
   }, [project, formID, sessionID]);
   const run = async (operation: () => Promise<void>) => {

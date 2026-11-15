@@ -79,8 +79,7 @@ export default function AccountForm({
                   field.setAttribute("aria-invalid", "true");
                   field.focus();
                 }
-                if (invalid?.error_field !== "password")
-                  setError(invalid?.error || "添加失败，请重试。");
+                setError(invalid?.error || "添加失败，请重试。");
                 return;
               }
               onSaved(`已添加成员 ${form.name}，首次登录需设置新密码。`);

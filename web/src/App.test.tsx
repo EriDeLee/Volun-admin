@@ -249,6 +249,11 @@ test("password setup rejects mismatched confirmations without sending a request"
     "true",
   );
   expect(screen.queryByRole("alert")).toBeNull();
+  const confirmation = screen.getByLabelText("确认新密码");
+  expect(
+    document.getElementById(confirmation.getAttribute("aria-describedby")!)
+      ?.textContent,
+  ).toBe("两次密码不一致。");
   expect(fetch).toHaveBeenCalledTimes(1);
 });
 

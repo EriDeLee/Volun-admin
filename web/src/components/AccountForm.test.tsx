@@ -89,7 +89,7 @@ test("resets the chosen member password and communicates the next-login requirem
   });
 });
 
-test("invalid password focuses the field without exposing length rules", async () => {
+test("invalid password explains length rules and clears the error after correction", async () => {
   render(
     <AccountForm
       target={{
@@ -111,7 +111,10 @@ test("invalid password focuses the field without exposing length rules", async (
   await user.type(password, "short");
   await user.click(screen.getByRole("button", { name: "确认重置密码" }));
   expect(screen.queryByRole("alert")).toBeNull();
-  expect(document.body.textContent).not.toMatch(/字节|字符|12|72/);
+  expect(
+    document.getElementById(password.getAttribute("aria-describedby")!)
+      ?.textContent,
+  ).toContain("密码太短。密码长度需为 12–72 字节");
   expect(document.activeElement).toBe(password);
   expect(password.getAttribute("aria-invalid")).toBe("true");
   await user.type(password, "x");

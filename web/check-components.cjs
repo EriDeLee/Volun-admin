@@ -335,14 +335,23 @@ async function checkComponents(browser, baseURL, output) {
     await account
       .getByRole("textbox", { name: "登录账号", exact: true })
       .fill("new-member");
-    const password = account.getByLabel("初始密码", { exact: true });
+    const password = account.locator('input[name="password"]');
     await password.fill("short");
     await account
       .getByRole("button", { name: "添加成员", exact: true })
       .click();
     assert.equal(await password.getAttribute("aria-invalid"), "true");
     assert.equal(await account.getByRole("alert").count(), 0);
-    assert.doesNotMatch(await account.innerText(), /字节|字符/);
+    assert.match(await account.innerText(), /密码太短.*12–72 字节/);
+    assert.match(await password.getAttribute("aria-describedby"), /.+/);
+    assert.match(
+      await password.evaluate(
+        (element) =>
+          document.getElementById(element.getAttribute("aria-describedby"))
+            .textContent,
+      ),
+      /密码太短/,
+    );
     await password.fill("测试密码");
     assert.equal(await password.getAttribute("aria-invalid"), null);
     await password.fill("测".repeat(25));
@@ -363,6 +372,9 @@ async function checkComponents(browser, baseURL, output) {
     );
     await audit(page, "account-password-error");
     await shot(page, "account-light");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await shot(page, "account-error-mobile");
+    await page.setViewportSize({ width: 1440, height: 1000 });
     await page.keyboard.press("Escape");
     await account.waitFor({ state: "hidden" });
     await page.getByRole("button", { name: "批量导入", exact: true }).click();
