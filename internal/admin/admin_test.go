@@ -179,14 +179,28 @@ func TestImportUsersAtomicValidationAndInitialLogin(t *testing.T) {
 	if count != 0 {
 		t.Fatal("preview wrote a user")
 	}
-	bad := csv + "other,其他,00002,short,formal_user\n"
-	invalid := decode[result](t, call(bad, true))
-	if invalid.Valid || invalid.Imported != 0 || invalid.Rows[1].Error == "" || invalid.Rows[1].ErrorField != "password" {
-		t.Fatalf("invalid batch: %+v", invalid)
-	}
-	f.db.Model(&model.User{}).Where("username IN ?", []string{"newuser", "other"}).Count(&count)
-	if count != 0 {
-		t.Fatal("invalid batch partially committed")
+	for _, tc := range []struct {
+		name     string
+		password string
+	}{
+		{"too short", "short"},
+		{"too long in UTF-8 bytes", strings.Repeat("密", 25)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bad := csv + "other,其他,00002," + tc.password + ",formal_user\n"
+			response := call(bad, true)
+			invalid := decode[result](t, response)
+			if invalid.Valid || invalid.Imported != 0 || len(invalid.Rows) != 2 || invalid.Rows[1].Error != "初始密码须为12至72字节" || invalid.Rows[1].ErrorField != "password" {
+				t.Fatalf("invalid batch: %+v", invalid)
+			}
+			if strings.Contains(response.Body.String(), tc.password) {
+				t.Fatal("invalid password leaked in response")
+			}
+			f.db.Model(&model.User{}).Where("username IN ?", []string{"newuser", "other"}).Count(&count)
+			if count != 0 {
+				t.Fatal("invalid batch partially committed")
+			}
+		})
 	}
 	w := call(csv, true)
 	created := decode[result](t, w)

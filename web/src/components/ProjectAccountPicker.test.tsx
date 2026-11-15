@@ -45,3 +45,58 @@ test("a slow account search cannot replace results for a newer query", async () 
     expect.objectContaining({ username: "new", number: "002" }),
   );
 });
+
+test.each(["success", "failure"])(
+  "selecting a result during a repeated query clears busy and ignores its late %s",
+  async (outcome) => {
+    const account = {
+      username: "alice",
+      name: "成员",
+      number: "001",
+      phone: "",
+    };
+    let resolveRepeat!: (result: { items: unknown[] }) => void;
+    let rejectRepeat!: (error: Error) => void;
+    vi.mocked(request)
+      .mockResolvedValueOnce({ items: [account] })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            resolveRepeat = resolve;
+            rejectRepeat = reject;
+          }),
+      )
+      .mockResolvedValueOnce({ items: [account] });
+    const onSelect = vi.fn();
+    render(
+      <ProjectAccountPicker base="/activity/projects/p" onSelect={onSelect} />,
+    );
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("姓名、学号或账号"), "alice");
+    await user.click(screen.getByRole("button", { name: "查询志愿者账号" }));
+    await screen.findByRole("button", { name: /选择 成员/ });
+    await user.click(screen.getByRole("button", { name: "查询志愿者账号" }));
+    await user.click(screen.getByRole("button", { name: /选择 成员/ }));
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(account);
+    expect(screen.queryByRole("button", { name: "正在查询…" })).toBeNull();
+    expect(
+      screen
+        .getByRole("group", { name: "从平台账号选择志愿者" })
+        .getAttribute("aria-busy"),
+    ).toBe("false");
+    await act(async () => {
+      if (outcome === "success") resolveRepeat({ items: [account] });
+      else rejectRepeat(new Error("过期查询失败"));
+    });
+    expect(screen.queryByRole("button", { name: /选择 成员/ })).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    const search = screen.getByRole<HTMLButtonElement>("button", {
+      name: "查询志愿者账号",
+    });
+    expect(search.disabled).toBe(false);
+    await user.click(search);
+    await screen.findByRole("button", { name: /选择 成员/ });
+  },
+);

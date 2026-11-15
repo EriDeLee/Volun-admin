@@ -208,6 +208,7 @@ async function checkWorkspace(browser) {
     await page.setViewportSize({ width, height: 900 });
     await project().waitFor();
     if (width <= 760) {
+      await page.getByRole("list", { name: "项目列表" }).waitFor();
       assert.equal(
         await page.getByRole("list", { name: "项目列表" }).count(),
         1,

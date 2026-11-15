@@ -85,6 +85,7 @@ export default function ProjectAccountPicker({
           key={account.username}
           onClick={() => {
             requestID.current++;
+            setBusy(false);
             onSelect(account);
             setItems([]);
             setSearched(false);

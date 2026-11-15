@@ -133,7 +133,7 @@ func (s *Service) importUsers(c *gin.Context, req importRequest) {
 		case row.ID == "" || utf8.RuneCountInString(row.ID) > 120:
 			row.Error, row.ErrorField = "请修改学号", "id"
 		case len(row.password) < 12 || len(row.password) > 72:
-			row.Error, row.ErrorField = "初始密码有误", "password"
+			row.Error, row.ErrorField = "初始密码须为12至72字节", "password"
 		case !ok:
 			row.Error, row.ErrorField = "用户组有误", "groups"
 		case seen[row.Username]:
