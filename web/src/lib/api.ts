@@ -2,10 +2,10 @@ import type { ApiError, ApiPath, ApiResult } from "../types.ts";
 export function asApiError(value: unknown): ApiError {
   return value instanceof Error ? value : new Error("请求失败，请重试。");
 }
-export async function api<P extends ApiPath>(
-  path: P,
+export async function fetchData<T>(
+  path: string,
   options: RequestInit = {},
-): Promise<ApiResult<P>> {
+): Promise<T> {
   let response;
   try {
     response = await fetch(`/api/v1${path}`, {
@@ -32,9 +32,11 @@ export async function api<P extends ApiPath>(
   ) {
     const error: ApiError = new Error(
       response.status === 401
-        ? "账号或密码不正确，或登录状态已失效。"
-        : response.status === 403
-          ? "当前账号没有访问权限，请联系管理员。"
+        ? path === "/auth/login"
+          ? "账号或密码错误"
+          : "登录已失效，请重新登录。"
+        : response.status === 403 && body?.errcode !== 200009
+          ? "当前账号没有访问权限。"
           : response.status >= 500
             ? "服务暂时不可用，请稍后重试。"
             : typeof body?.message === "string"
@@ -46,5 +48,12 @@ export async function api<P extends ApiPath>(
     throw error;
   }
   // The server JSON boundary is typed by the route-specific DTO contract.
-  return body.data as ApiResult<P>;
+  return body.data as T;
+}
+
+export function api<P extends ApiPath>(
+  path: P,
+  options: RequestInit = {},
+): Promise<ApiResult<P>> {
+  return fetchData<ApiResult<P>>(path, options);
 }

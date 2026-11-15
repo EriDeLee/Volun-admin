@@ -1,3 +1,5 @@
+import { groupNames } from "../lib/constants.ts";
+import ScrollRegion from "./ScrollRegion.tsx";
 import { useRef, useState } from "react";
 import Modal from "./Modal.tsx";
 import { request } from "../lib/workflow.ts";
@@ -15,6 +17,8 @@ interface Result {
     id: string;
     groups: string[];
     error: string;
+    error_field?: string;
+    phone?: string;
   }[];
 }
 
@@ -88,7 +92,7 @@ export default function UserImport({
             <span>1</span>准备名单
           </li>
           <li className={csv && !result?.valid ? "current" : ""}>
-            <span>2</span>预检数据
+            <span>2</span>检查名单
           </li>
           <li className={result?.valid ? "current" : ""}>
             <span>3</span>确认导入
@@ -156,9 +160,7 @@ export default function UserImport({
             <Icon name="info" />
             填写规则与用户组说明
           </summary>
-          <p>
-            账号和学号请以文本填写，保留前导零。初始密码为12至72字节，成员首次登录需设置新密码。
-          </p>
+          <p>账号和学号请以文本填写，保留前导零。成员首次登录需设置新密码。</p>
           <p>
             用户组留空默认为正式用户；多个代码用 <code>|</code> 分隔。
           </p>
@@ -191,10 +193,13 @@ export default function UserImport({
             >
               <Icon name={result.valid ? "check" : "info"} />
               {result.valid
-                ? `预检通过，共 ${result.rows.length} 人。`
-                : "预检未通过，请修正以下错误后重试，尚未写入任何账号。"}
+                ? `名单已检查，共 ${result.rows.length} 人。`
+                : "名单有误，尚未导入。"}
             </p>
-            <div className="activity-table-wrap import-preview">
+            <ScrollRegion
+              label="成员导入检查"
+              className="activity-table-wrap import-preview"
+            >
               <table className="activity-table">
                 <thead>
                   <tr>
@@ -202,27 +207,83 @@ export default function UserImport({
                     <th>账号</th>
                     <th>姓名</th>
                     <th>编号</th>
-                    <th>校验结果</th>
+                    <th>初始密码</th>
+                    <th>用户组</th>
+                    <th>手机号</th>
+                    <th>检查结果</th>
                   </tr>
                 </thead>
                 <tbody>
                   {result.rows.map((row) => (
                     <tr key={row.line}>
                       <td>{row.line}</td>
-                      <td>{row.username}</td>
-                      <td>{row.name}</td>
-                      <td>{row.id}</td>
+                      <td
+                        className={
+                          row.error_field === "username"
+                            ? "import-cell-error"
+                            : undefined
+                        }
+                      >
+                        {row.username}
+                      </td>
+                      <td
+                        className={
+                          row.error_field === "name"
+                            ? "import-cell-error"
+                            : undefined
+                        }
+                      >
+                        {row.name}
+                      </td>
+                      <td
+                        className={
+                          row.error_field === "id"
+                            ? "import-cell-error"
+                            : undefined
+                        }
+                      >
+                        {row.id}
+                      </td>
+                      <td
+                        className={
+                          row.error_field === "password"
+                            ? "import-cell-error"
+                            : undefined
+                        }
+                      >
+                        ••••••
+                      </td>
+                      <td
+                        className={
+                          row.error_field === "groups"
+                            ? "import-cell-error"
+                            : undefined
+                        }
+                      >
+                        {row.groups
+                          ?.map((group) => groupNames[group] || group)
+                          .join("、")}
+                      </td>
+                      <td
+                        className={
+                          row.error_field === "phone"
+                            ? "import-cell-error"
+                            : undefined
+                        }
+                      >
+                        {row.phone || "—"}
+                      </td>
                       <td>{row.error || "通过"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollRegion>
           </>
         )}
       </div>
       <div className="activity-modal-actions import-footer">
-        <span>预检通过后才能导入</span>
+        <span>检查后导入</span>
         <button className="button secondary" disabled={busy} onClick={onClose}>
           取消
         </button>
@@ -231,7 +292,7 @@ export default function UserImport({
           disabled={busy || !csv.trim()}
           onClick={() => void submit(false)}
         >
-          预检
+          检查名单
         </button>
         <button
           className="button primary"

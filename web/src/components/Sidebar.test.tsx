@@ -3,7 +3,12 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import Sidebar from "./Sidebar.tsx";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  Reflect.deleteProperty(HTMLDialogElement.prototype, "showModal");
+  Reflect.deleteProperty(HTMLDialogElement.prototype, "close");
+});
 
 test.each([
   [
@@ -74,6 +79,23 @@ test.each([
 );
 
 test("mobile navigation closes after choosing a page and the brand respects the role home", async () => {
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+  Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
+    configurable: true,
+    value() {
+      this.setAttribute("open", "");
+    },
+  });
+  Object.defineProperty(HTMLDialogElement.prototype, "close", {
+    configurable: true,
+    value() {
+      this.removeAttribute("open");
+    },
+  });
   const onClose = vi.fn(),
     onNavigate = vi.fn();
   render(
@@ -85,6 +107,8 @@ test("mobile navigation closes after choosing a page and the brand respects the 
       onNavigate={onNavigate}
     />,
   );
+  expect(screen.getByRole("dialog", { name: "主导航" })).toBeTruthy();
+  expect(document.body.style.overflow).toBe("");
   await userEvent.click(screen.getByRole("link", { name: "成员管理" }));
   expect(onNavigate).toHaveBeenLastCalledWith("/users");
   expect(onClose).toHaveBeenCalledTimes(1);
@@ -94,4 +118,6 @@ test("mobile navigation closes after choosing a page and the brand respects the 
   expect(onNavigate).toHaveBeenLastCalledWith("/activity");
   await userEvent.click(screen.getByRole("button", { name: "收起导航" }));
   expect(onClose).toHaveBeenCalledTimes(3);
+  cleanup();
+  expect(document.body.style.overflow).toBe("");
 });

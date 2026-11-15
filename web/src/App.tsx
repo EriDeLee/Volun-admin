@@ -1,4 +1,4 @@
-import Sidebar from "./components/Sidebar.tsx";
+import ValidatedForm from "./components/ValidatedForm.tsx";
 import type { AuthSession, ApiError } from "./types.ts";
 import { asApiError } from "./lib/api.ts";
 import React, { useEffect, useRef, useState } from "react";
@@ -18,7 +18,7 @@ import "./workspace.css";
 import "./theme.css";
 import ThemeSelect from "./components/ThemeSelect.tsx";
 import Icon from "./components/Icon.tsx";
-import { Brand } from "./components/WorkspaceShell.tsx";
+import WorkspaceShell, { Brand } from "./components/WorkspaceShell.tsx";
 import { api } from "./lib/api.ts";
 import { useDraftStore } from "./lib/drafts.tsx";
 
@@ -53,7 +53,6 @@ export default function App() {
 }
 function Application() {
   const { reset: resetDrafts } = useDraftStore();
-  const [menu, setMenu] = useState(false);
   const [session, setSession] = useState<AuthSession | null>(null),
     [checking, setChecking] = useState(true),
     [startupError, setStartupError] = useState("");
@@ -66,8 +65,7 @@ function Application() {
     [pending, setPending] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [notice, setNotice] = useState(""),
-    [updated, setUpdated] = useState<Date | null>(null);
+  const [notice, setNotice] = useState("");
   const busy = useRef(false);
   const [route, setRoute] = useState(() => location.pathname + location.search);
   const pathname = route.split("?")[0];
@@ -108,7 +106,6 @@ function Application() {
       const data = await api("/auth/me");
       if (!data?.user) throw new Error("无法读取账号信息，请重试。");
       setSession(data);
-      setUpdated(new Date());
       setPath(
         data.password_setup_required
           ? "/set-password"
@@ -162,7 +159,6 @@ function Application() {
       });
       if (!data?.user) throw new Error("未能获取登录信息，请重试。");
       setSession(data);
-      setUpdated(new Date());
       setForm({ username: "", password: "" });
       setVisible(false);
       setPath(data.password_setup_required ? "/set-password" : homePath(data));
@@ -187,7 +183,6 @@ function Application() {
       resetDrafts();
       setForm({ username: "", password: "" });
       setVisible(false);
-      setUpdated(null);
       setNewPassword("");
       setConfirmPassword("");
       setPath("/login");
@@ -207,15 +202,6 @@ function Application() {
     e.preventDefault();
     if (busy.current) return;
     setError("");
-    const length = new TextEncoder().encode(newPassword).length;
-    if (length < 12 || length > 72) {
-      setError("密码需为 12 至 72 个字节。");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError("两次输入的密码不一致，请重新确认。");
-      return;
-    }
     busy.current = true;
     setPending("set-password");
     try {
@@ -227,7 +213,6 @@ function Application() {
       if (data.password_setup_required)
         throw new Error("密码尚未设置成功，请重试。");
       setSession(data);
-      setUpdated(new Date());
       setNewPassword("");
       setConfirmPassword("");
       const participantReturn = sessionStorage.getItem("participant_return");
@@ -239,11 +224,11 @@ function Application() {
       const e = asApiError(cause);
       setError(
         e.status === 401
-          ? "登录已失效，请重新使用学校统一认证。"
+          ? "登录已失效，请重新登录。"
           : e.status === 409
             ? "密码已设置，请重新登录。"
             : e.status === 400
-              ? "密码格式不符合要求，请检查后重试。"
+              ? "请重新设置密码。"
               : e.message,
       );
     } finally {
@@ -269,51 +254,53 @@ function Application() {
     onSessionIssue,
   };
   if (pathname === "/signup" && new URLSearchParams(routeSearch).get("project"))
-    return <ParticipantPage />;
+    return (
+      <ParticipantPage
+        key={route}
+        onNavigate={navigate}
+        onSessionChange={(authenticated) => {
+          setSession(authenticated);
+          if (!authenticated) resetDrafts();
+        }}
+      />
+    );
   if (session?.password_setup_required)
     return (
       <main className="setup-page">
         <header className="setup-header">
           <Brand />
           <ThemeSelect />
-          <span className="setup-verified">
-            <Icon name="check" />
-            学校身份已验证
-          </span>
         </header>
         <section className="setup-card">
           <span className="setup-icon">
             <Icon name="shield" />
           </span>
-          <p className="setup-eyebrow">首次登录 · 完成账号设置</p>
+          <p className="setup-eyebrow">完成账号设置</p>
           <h1>请设置登录密码</h1>
-          <p className="setup-intro">
-            学校身份验证已完成。设置平台密码后，即可使用学校统一认证或账号密码登录。
-          </p>
+          <p className="setup-intro">设置后可使用新密码登录。</p>
           <div className="setup-account">
             <span className="avatar">
               {(session.user.name || session.user.username || "用").slice(0, 1)}
             </span>
             <div>
-              <strong>{session.user.name || "学校认证用户"}</strong>
+              <strong>{session.user.name || session.user.username}</strong>
               <small>
-                平台登录账号：{session.user.username || "请联系管理员确认"}
+                登录账号：{session.user.username || "请联系管理员确认"}
               </small>
             </div>
           </div>
-          <form onSubmit={setInitialPassword} className="setup-form">
+          <ValidatedForm onSubmit={setInitialPassword} className="setup-form">
             <label htmlFor="new-password">新密码</label>
             <div className="password-field">
               <input
                 id="new-password"
+                placeholder="设置新的登录密码"
                 type={visible ? "text" : "password"}
                 autoComplete="new-password"
                 required
-                minLength={12}
-                maxLength={72}
+                data-validate="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="至少 12 个字符"
                 disabled={!!pending}
               />
               <button
@@ -329,19 +316,15 @@ function Application() {
             <label htmlFor="confirm-password">确认新密码</label>
             <input
               id="confirm-password"
+              placeholder="再次输入新密码"
+              data-matches="new-password"
               type={visible ? "text" : "password"}
               autoComplete="new-password"
               required
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="再次输入新密码"
               disabled={!!pending}
             />
-            <p className="password-hint">
-              <Icon name="info" />
-              密码长度为 12 至 72
-              字节（中文字符会占用多个字节）。请勿使用学校账号密码。
-            </p>
             {error && (
               <p className="error" role="alert">
                 {error}
@@ -352,10 +335,10 @@ function Application() {
               type="submit"
               disabled={!!pending}
             >
-              {pending === "set-password" ? "正在安全保存…" : "设置密码并继续"}
+              {pending === "set-password" ? "正在保存…" : "设置密码并继续"}
               <Icon name="arrow" />
             </button>
-          </form>
+          </ValidatedForm>
           <button
             className="setup-logout"
             onClick={logout}
@@ -435,13 +418,16 @@ function Application() {
             <h2>欢迎回到志愿服务</h2>
             <p className="muted">登录后查看身份信息，开启志愿服务协作。</p>
             <div className="form-heading">账号登录</div>
-            <form onSubmit={login}>
+            <ValidatedForm onSubmit={login}>
               <label htmlFor="username">账号</label>
               <input
                 id="username"
                 name="username"
                 required
                 autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 placeholder="请输入账号"
                 value={form.username}
                 disabled={!!pending}
@@ -485,7 +471,7 @@ function Application() {
                 {pending === "login" ? "正在登录…" : "登录平台"}
                 <Icon name="arrow" />
               </button>
-            </form>
+            </ValidatedForm>
             <div className="divider">或使用学校账号</div>
             <a
               className={`button secondary ${pending ? "disabled" : ""}`}
@@ -570,221 +556,154 @@ function Application() {
   const user = session.user,
     name = user.name || user.username || "平台用户",
     groups = Array.isArray(user.groups) ? user.groups : [];
-  const authLabel =
-    {
-      password: "账号密码登录",
-      sso: "学校统一认证",
-      session: "已通过会话验证",
-    }[session.auth_method || "session"] || "已通过会话验证";
   return (
-    <div className="profile-shell activity-shell">
-      <Sidebar
-        session={session}
-        route="/profile"
-        onNavigate={navigate}
-        open={menu}
-        onClose={() => setMenu(false)}
-      />
-      <div className="profile-main">
-        <header className="topbar activity-topbar">
-          <button
-            className="activity-icon-button activity-mobile-menu"
-            aria-label="展开导航"
-            aria-expanded={menu}
-            onClick={() => setMenu(!menu)}
-          >
-            <Icon name="menu" />
-          </button>
-          <span>
-            个人空间 <b>/</b> <strong>个人信息</strong>
-          </span>
-          <ThemeSelect />
-          <button
-            className="button secondary"
-            onClick={logout}
-            disabled={!!pending}
-          >
-            <Icon name="logout" />
-            {pending === "logout" ? "正在退出…" : "退出登录"}
-          </button>
-        </header>
-        <main className="profile-content">
-          <div className="page-heading">
-            <div>
-              <h1>个人信息</h1>
-              {canManage(session) && (
-                <a
-                  className="activity-text-button"
-                  href="/activity"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    navigate("/activity");
-                  }}
-                >
-                  返回活动工作台
-                </a>
-              )}
-              <p>报名前请确认姓名、学号 / 人员编号，并绑定本人手机号。</p>
-            </div>
-            <button
-              className="button secondary"
-              onClick={() => loadSession()}
-              disabled={!!pending}
+    <WorkspaceShell
+      session={session}
+      route="/profile"
+      crumb="个人信息"
+      space="个人空间"
+      contentClassName="profile-content"
+      onNavigate={navigate}
+      logout={logout}
+      logoutPending={pending === "logout"}
+    >
+      <div className="page-heading">
+        <div>
+          <h1>个人信息</h1>
+          {canManage(session) && (
+            <a
+              className="activity-text-button"
+              href="/activity"
+              onClick={(e) => {
+                e.preventDefault();
+                navigate("/activity");
+              }}
             >
-              <Icon name="refresh" />
-              {pending === "refresh" ? "正在刷新…" : "刷新信息"}
-            </button>
-          </div>
-          {error && (
-            <p className="error" role="alert">
-              {error}
-            </p>
+              返回活动工作台
+            </a>
           )}
-          {notice && (
-            <p className="success" role="status">
-              {notice}
-            </p>
-          )}
-          <section className="workspace-info" aria-label="报名资料完整度">
-            <div>
-              <strong>
-                {profileComplete(user) ? "报名资料已完善" : "报名资料待完善"}
-              </strong>
-              <p>
-                {profileComplete(user)
-                  ? "姓名、学号和手机号已齐全，可以报名志愿服务。"
-                  : "请先绑定手机号；姓名或学号缺失时，请联系管理员核实补全。"}
-              </p>
-            </div>
-            {profileComplete(user) && (
-              <button
-                className="button primary"
-                onClick={() => {
-                  const target = sessionStorage.getItem("volunteer_return");
-                  sessionStorage.removeItem("volunteer_return");
-                  navigate(
-                    target?.startsWith("/signup?project=")
-                      ? target
-                      : "/recruitment",
-                  );
-                }}
-              >
-                继续报名
-              </button>
-            )}
-          </section>
-          <section className="identity-banner">
-            <span className="avatar large">{name.slice(0, 1)}</span>
-            <div>
-              <div className="identity-name">
-                <h2>{name}</h2>
-                <span className="badge">
-                  <Icon name="check" />
-                  已登录
-                </span>
-              </div>
-              <p>{user.username || "学校统一认证用户"}</p>
-              <div className="group-list">
-                {groups.map((g) => (
-                  <span key={g} className="badge white">
-                    {groupNames[g] || g}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <Icon name="shield" className="identity-shield" />
-          </section>
-          <div className="profile-grid">
-            <section className="panel">
-              <div className="panel-heading">
-                <Icon name="user" />
-                <h2>基本资料</h2>
-                <span>当前账号</span>
-              </div>
-              <dl className="details">
-                <div>
-                  <dt>姓名</dt>
-                  <dd>{user.name || "未提供"}</dd>
-                </div>
-                <div>
-                  <dt>登录账号</dt>
-                  <dd>{user.username || "未提供"}</dd>
-                </div>
-                <div>
-                  <dt>学号 / 人员编号</dt>
-                  <dd>{user.id || "未提供"}</dd>
-                </div>
-                <div>
-                  <dt>绑定手机号</dt>
-                  <dd>{user.phone || "尚未绑定"}</dd>
-                </div>
-              </dl>
-              <PhoneBinding phone={user.phone} onBound={setSession} />
-              <p className="panel-note">
-                <Icon name="info" />
-                资料来自当前账号记录，如需更正请联系管理员。
-              </p>
-            </section>
-            <div className="right-column">
-              <section className="panel">
-                <div className="panel-heading">
-                  <Icon name="shield" />
-                  <h2>账号与访问</h2>
-                </div>
-                <dl className="details compact">
-                  <div>
-                    <dt>登录状态</dt>
-                    <dd>
-                      <span className="status-dot" />
-                      会话有效
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>验证方式</dt>
-                    <dd>{authLabel}</dd>
-                  </div>
-                  <div>
-                    <dt>最近读取</dt>
-                    <dd>
-                      {updated?.toLocaleTimeString("zh-CN", {
-                        hour12: false,
-                      }) || "—"}
-                    </dd>
-                  </div>
-                </dl>
-                <p className="panel-note">
-                  退出平台会撤销当前平台会话，不会退出学校其他系统。
-                </p>
-              </section>
-              <section className="panel">
-                <div className="panel-heading">
-                  <Icon name="user" />
-                  <h2>所属用户组</h2>
-                </div>
-                <div className="permission-body">
-                  <div className="group-list">
-                    {groups.length ? (
-                      groups.map((g) => (
-                        <span className="badge" key={g}>
-                          {groupNames[g] || g}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="muted">暂未分配用户组</span>
-                    )}
-                  </div>
-                  <p>
-                    用户组由平台管理员分配。项目的实际访问范围以具体授权为准。
-                  </p>
-                </div>
-              </section>
-            </div>
-          </div>
-          <footer className="page-footer">
-            北京航空航天大学 · 志愿服务项目管理平台
-          </footer>
-        </main>
+          <p>报名前请确认姓名、学号 / 人员编号，并绑定本人手机号。</p>
+        </div>
+        <button
+          className="button secondary"
+          onClick={() => loadSession()}
+          disabled={!!pending}
+        >
+          <Icon name="refresh" />
+          {pending === "refresh" ? "正在刷新…" : "刷新信息"}
+        </button>
       </div>
-    </div>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p className="success" role="status">
+          {notice}
+        </p>
+      )}
+      <section className="workspace-info" aria-label="报名资料完整度">
+        <div>
+          <strong>
+            {profileComplete(user) ? "报名资料已完善" : "报名资料待完善"}
+          </strong>
+          <p>
+            {profileComplete(user)
+              ? "可以报名志愿服务。"
+              : !user.name || !user.id
+                ? "请联系管理员补全姓名和学号。"
+                : "请绑定本人手机号。"}
+          </p>
+        </div>
+        {profileComplete(user) && (
+          <button
+            className="button primary"
+            onClick={() => {
+              const target = sessionStorage.getItem("volunteer_return");
+              sessionStorage.removeItem("volunteer_return");
+              navigate(
+                target?.startsWith("/signup?project=")
+                  ? target
+                  : "/recruitment",
+              );
+            }}
+          >
+            继续报名
+          </button>
+        )}
+      </section>
+      <section className="identity-banner">
+        <span className="avatar large">{name.slice(0, 1)}</span>
+        <div>
+          <div className="identity-name">
+            <h2>{name}</h2>
+            <span className="badge">
+              <Icon name="check" />
+              已登录
+            </span>
+          </div>
+          <p>{user.username || "学校统一认证用户"}</p>
+        </div>
+        <Icon name="shield" className="identity-shield" />
+      </section>
+      <div className="profile-grid">
+        <section className="panel">
+          <div className="panel-heading">
+            <Icon name="user" />
+            <h2>基本资料</h2>
+            <span>当前账号</span>
+          </div>
+          <dl className="details">
+            <div>
+              <dt>姓名</dt>
+              <dd>{user.name || "未提供"}</dd>
+            </div>
+            <div>
+              <dt>登录账号</dt>
+              <dd>{user.username || "未提供"}</dd>
+            </div>
+            <div>
+              <dt>学号 / 人员编号</dt>
+              <dd>{user.id || "未提供"}</dd>
+            </div>
+            <div>
+              <dt>绑定手机号</dt>
+              <dd>{user.phone || "尚未绑定"}</dd>
+            </div>
+          </dl>
+          <PhoneBinding phone={user.phone} onBound={setSession} />
+          <p className="panel-note">
+            <Icon name="info" />
+            姓名或学号有误，请联系管理员。
+          </p>
+        </section>
+        <div className="right-column">
+          <section className="panel">
+            <div className="panel-heading">
+              <Icon name="user" />
+              <h2>所属用户组</h2>
+            </div>
+            <div className="permission-body">
+              <div className="group-list">
+                {groups.length ? (
+                  groups.map((g) => (
+                    <span className="badge" key={g}>
+                      {groupNames[g] || g}
+                    </span>
+                  ))
+                ) : (
+                  <span className="muted">暂未分配用户组</span>
+                )}
+              </div>
+              <p>用户组由管理员分配。</p>
+            </div>
+          </section>
+        </div>
+      </div>
+      <footer className="page-footer">
+        北京航空航天大学 · 志愿服务项目管理平台
+      </footer>
+    </WorkspaceShell>
   );
 }

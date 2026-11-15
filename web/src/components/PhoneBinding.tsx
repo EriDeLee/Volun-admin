@@ -1,4 +1,5 @@
-import { useId, useState } from "react";
+import ValidatedForm from "./ValidatedForm.tsx";
+import { useId, useRef, useState } from "react";
 import "./PhoneBinding.css";
 import type { AuthSession } from "../types.ts";
 import { request } from "../lib/workflow.ts";
@@ -10,13 +11,14 @@ export default function PhoneBinding({
   phone?: string;
   onBound: (session: AuthSession) => void;
 }) {
-  const hintID = useId();
+  const errorID = useId();
   const [value, setValue] = useState(phone || "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const input = useRef<HTMLInputElement>(null);
   return (
-    <form
+    <ValidatedForm
       className="phone-binding"
       onSubmit={async (event) => {
         event.preventDefault();
@@ -32,9 +34,14 @@ export default function PhoneBinding({
           );
           setValue(result.user.phone || "");
           onBound(result);
-          setNotice("手机号已绑定，后续报名将自动读取。");
+          setNotice("手机号已绑定。");
         } catch (cause) {
           setError((cause as Error).message);
+          const status = (cause as { status?: number }).status;
+          if (status === 400 || status === 409) {
+            input.current?.setAttribute("aria-invalid", "true");
+            input.current?.focus();
+          }
         } finally {
           setBusy(false);
         }
@@ -43,23 +50,26 @@ export default function PhoneBinding({
       <label>
         绑定手机号
         <input
+          ref={input}
           required
           type="tel"
           inputMode="tel"
-          aria-describedby={hintID}
+          name="phone"
+          placeholder="请输入本人手机号"
+          data-validate="phone"
+          aria-describedby={error ? errorID : undefined}
           autoComplete="tel"
-          maxLength={20}
           value={value}
           disabled={busy}
-          onChange={(event) => setValue(event.target.value)}
-          placeholder="11位手机号"
+          onChange={(event) => {
+            setValue(event.target.value);
+            setError("");
+            setNotice("");
+          }}
         />
       </label>
-      <p className="phone-binding-hint" id={hintID}>
-        一个手机号只能绑定一个账号。
-      </p>
       {error && (
-        <p className="error" role="alert">
+        <p className="error" role="alert" id={errorID}>
           {error}
         </p>
       )}
@@ -71,6 +81,6 @@ export default function PhoneBinding({
       <button className="button secondary" disabled={busy}>
         {busy ? "正在保存…" : phone ? "更新绑定手机号" : "绑定手机号"}
       </button>
-    </form>
+    </ValidatedForm>
   );
 }

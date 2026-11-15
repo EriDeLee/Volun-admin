@@ -3,8 +3,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "yarn typecheck && vite build",
-    "format": "prettier --write src index.html package.json vite.config.ts tsconfig.json check-workspace.cjs",
-    "format:check": "prettier --check src index.html package.json vite.config.ts tsconfig.json check-workspace.cjs",
+    "format": "prettier --write src index.html package.json vite.config.ts tsconfig.json check-workspace.cjs check-components.cjs browser-options.cjs",
+    "format:check": "prettier --check src index.html package.json vite.config.ts tsconfig.json check-workspace.cjs check-components.cjs browser-options.cjs",
     "test": "vitest run --environment jsdom",
     "test:browser": "node check-workspace.cjs",
     "typecheck": "tsc --noEmit"
@@ -22,6 +22,7 @@
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "axe-core": "4.14.0",
     "jsdom": "^29.1.1",
     "playwright-core": "^1.65.0",
     "prettier": "^3.9.10",

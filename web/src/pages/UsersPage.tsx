@@ -1,3 +1,5 @@
+import ValidatedForm from "../components/ValidatedForm.tsx";
+import ScrollRegion from "../components/ScrollRegion.tsx";
 import { asApiError } from "../lib/api.ts";
 import type { WorkspaceProps, AdminUserList, AdminUser } from "../types.ts";
 import React, { useEffect, useRef, useState } from "react";
@@ -35,6 +37,7 @@ export default function UsersPage({
   const [editGroups, setEditGroups] = useState<string[]>([]);
   const [editStatus, setEditStatus] = useState("active");
   const [editPhone, setEditPhone] = useState("");
+  const [unbindPhone, setUnbindPhone] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [notice, setNotice] = useState("");
@@ -105,6 +108,7 @@ export default function UsersPage({
     setEditGroups([...user.groups]);
     setEditStatus(user.status);
     setEditPhone(user.phone || "");
+    setUnbindPhone(false);
     setFormError("");
   };
 
@@ -141,7 +145,7 @@ export default function UsersPage({
           body: JSON.stringify({
             status: editStatus,
             groups: editGroups,
-            phone: editPhone,
+            phone: unbindPhone ? "" : editPhone,
           }),
         },
       );
@@ -154,11 +158,7 @@ export default function UsersPage({
       if (mounted.current) {
         if (err.status === 401 || err.code === 200009) onSessionIssue(err);
         else
-          setFormError(
-            err.status === 400
-              ? "请检查用户组与状态设置，不能停用或降权当前超管账号。"
-              : err.message,
-          );
+          setFormError(err.status === 400 ? "请检查填写内容。" : err.message);
       }
     } finally {
       lock.current = false;
@@ -250,7 +250,7 @@ export default function UsersPage({
                 "已停用",
                 data.summary.disabled_count,
                 "人",
-                "会话已撤销",
+                "已退出所有设备",
                 "close",
               ],
               [
@@ -279,7 +279,7 @@ export default function UsersPage({
         </div>
       )}
       <section className="panel" aria-busy={loading}>
-        <form className="workspace-filters" onSubmit={search}>
+        <ValidatedForm className="workspace-filters" onSubmit={search}>
           <label className="activity-search">
             <Icon name="search" />
             <input
@@ -327,7 +327,7 @@ export default function UsersPage({
           >
             重置
           </button>
-        </form>
+        </ValidatedForm>
         <div className="filter-meta">
           <span>共 {data?.total ?? 0} 个账号</span>
           <span>用户组由超管分配 · 不开放自行注册</span>
@@ -347,7 +347,7 @@ export default function UsersPage({
           </div>
         ) : data?.items?.length ? (
           <>
-            <div className="activity-table-wrap">
+            <ScrollRegion label="成员目录">
               <table className="activity-table ledger-table">
                 <thead>
                   <tr>
@@ -439,7 +439,7 @@ export default function UsersPage({
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollRegion>
             <div className="pagination">
               <span>
                 第 {(page - 1) * data.page_size + 1}–
@@ -498,21 +498,32 @@ export default function UsersPage({
           <p className="activity-modal-intro">
             姓名：{editing.name || "未提供"}
             {editing.id ? ` · 编号 ${editing.id}` : ""}
-            。用户组决定功能权限，停用会立即撤销会话。
           </p>
-          <form onSubmit={saveUser} className="activity-project-form">
+          <ValidatedForm onSubmit={saveUser} className="activity-project-form">
             <div className="activity-form-fields">
               <label>
                 绑定手机号
                 <input
                   type="tel"
-                  disabled={saving}
-                  maxLength={20}
+                  disabled={saving || unbindPhone}
+                  required={!!editing.phone && !unbindPhone}
+                  data-validate="phone"
                   value={editPhone}
+                  placeholder="请输入手机号"
                   onChange={(event) => setEditPhone(event.target.value)}
-                  placeholder="留空解除绑定"
                 />
               </label>
+              {editing.phone && (
+                <label className="full">
+                  <input
+                    type="checkbox"
+                    checked={unbindPhone}
+                    disabled={saving}
+                    onChange={(event) => setUnbindPhone(event.target.checked)}
+                  />
+                  解除手机号绑定
+                </label>
+              )}
               <label className="full">
                 账号状态
                 <select
@@ -524,6 +535,9 @@ export default function UsersPage({
                   <option value="disabled">停用</option>
                 </select>
               </label>
+              {editStatus === "disabled" && editing.status !== "disabled" && (
+                <p>该账号将退出所有设备。</p>
+              )}
               <fieldset className="full user-group-fieldset">
                 <legend>用户组</legend>
                 <div className="user-group-options">
@@ -536,7 +550,6 @@ export default function UsersPage({
                         onChange={() => toggleGroup(code)}
                       />
                       <span>{groupNames[code]}</span>
-                      <small>{code}</small>
                     </label>
                   ))}
                 </div>
@@ -564,7 +577,7 @@ export default function UsersPage({
                 {saving ? "正在保存…" : "保存变更"}
               </button>
             </div>
-          </form>
+          </ValidatedForm>
         </Modal>
       )}
       {canEdit && importing && (

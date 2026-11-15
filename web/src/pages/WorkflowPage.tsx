@@ -1,4 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import TableImport from "../components/TableImport.tsx";
+import ValidatedForm from "../components/ValidatedForm.tsx";
+import ScrollRegion from "../components/ScrollRegion.tsx";
+import React, { useEffect, useId, useRef, useState } from "react";
 import type { ProjectPageProps } from "../types.ts";
 import WorkspaceShell from "../components/WorkspaceShell.tsx";
 import AssignmentPicker from "../components/AssignmentPicker.tsx";
@@ -14,6 +17,7 @@ import Icon from "../components/Icon.tsx";
 import {
   request,
   approvalNames,
+  historyActionNames,
   attendanceNames,
   iso,
   localTime,
@@ -66,6 +70,9 @@ export default function WorkflowPage(
   props: ProjectPageProps & { id: string; initialTab?: string },
 ) {
   const { id, onNavigate, onSessionIssue } = props;
+  const tabID = useId();
+  const panelID = `${tabID}-panel`;
+  const [focusedTab, setFocusedTab] = useState<string | null>(null);
   const base = `/activity/projects/${encodeURIComponent(id)}`;
   const [data, setData] = useState<Workflow | null>(null),
     [history, setHistory] = useState<History>({ events: [], materials: [] });
@@ -74,13 +81,23 @@ export default function WorkflowPage(
     [busy, setBusy] = useState(false);
   const [basics, setBasics] = useState<Basics | null>(null),
     [material, setMaterial] = useState<Material | null>(null);
-  const [tab, setTab] = useState(
-    props.initialTab ||
-      new URLSearchParams(props.search || "").get("tab") ||
-      "overview",
-  );
-  const [member, setMember] = useState<Member>(emptyMember),
-    [paste, setPaste] = useState("");
+  const [tab, setTab] = useState(() => {
+    const requested =
+      props.initialTab || new URLSearchParams(props.search || "").get("tab");
+    return requested &&
+      [
+        "overview",
+        "forms",
+        "recruit",
+        "materials",
+        "attendance",
+        "hours",
+        "history",
+      ].includes(requested)
+      ? requested
+      : "overview";
+  });
+  const [member, setMember] = useState<Member>(emptyMember);
   const [reason, setReason] = useState("");
   const [previewFile, setPreviewFile] = useState<
     History["materials"][number] | null
@@ -104,16 +121,17 @@ export default function WorkflowPage(
     deadline: "",
     rotate: false,
   });
+  const [accessMode, setAccessMode] = useState("link");
+  const [accessLink, setAccessLink] = useState("");
   const [access, setAccess] = useState({
     member_id: "",
     username: "",
-    revoke: false,
     reason: "",
   });
   const [qr, setQR] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const mutationLock = useRef(false);
-  const navigation = useRef<HTMLElement>(null);
+  const navigation = useRef<HTMLDivElement>(null);
   const [copying, setCopying] = useState(false);
   const handle = (e: unknown) => {
     const failure = e as Error & { status?: number; code?: number };
@@ -173,9 +191,7 @@ export default function WorkflowPage(
           formSnapshot(publishedForm(data))
         ) {
           setData(current);
-          throw new Error(
-            "问卷配置已由其他操作修改，已加载最新版本。你的填写内容已保留，请核对后再次保存。",
-          );
+          throw new Error("内容有更新，尚未保存。请核对后重试。");
         }
       }
       let result: Workflow;
@@ -201,9 +217,7 @@ export default function WorkflowPage(
           formSnapshot(publishedForm(latest)) !==
             formSnapshot(publishedForm(current))
         )
-          throw new Error(
-            "问卷配置或项目状态已变化，已加载最新版本。填写内容已保留，请核对后再次保存。",
-          );
+          throw new Error("内容有更新，尚未保存。请核对后重试。");
         result = await request<Workflow>(
           base + path,
           body,
@@ -218,8 +232,12 @@ export default function WorkflowPage(
       if (path === "/forms")
         setForm((previous) => ({ ...previous, rotate: false }));
       if (path === "/changes") setReason("");
-      setHistory(await request<History>(`${base}/history`));
-      setNotice("已保存到服务器。");
+      setNotice("已保存。");
+      try {
+        setHistory(await request<History>(`${base}/history`));
+      } catch {
+        setError("已保存，操作记录刷新失败。");
+      }
       return true;
     } catch (e) {
       handle(e);
@@ -227,9 +245,7 @@ export default function WorkflowPage(
       if (failure.status === 409 && failure.code === 100003) {
         try {
           setData(await request<Workflow>(`${base}/workflow`));
-          setError(
-            "项目数据已变化，已更新版本。填写内容已保留，请核对后重试。",
-          );
+          setError("内容有更新，尚未保存。请核对后重试。");
         } catch {
           /* Keep the original conflict visible. */
         }
@@ -301,12 +317,11 @@ export default function WorkflowPage(
         : "设置首场起止时间后开放");
   const tabs = [
     { key: "overview", label: "立项", locked: "" },
-    { key: "forms", label: "招募问卷与二维码", locked: approvalLock },
+    { key: "forms", label: "报名问卷", locked: approvalLock },
     { key: "recruit", label: "成员名单", locked: approvalLock },
     { key: "materials", label: "附件1", locked: approvalLock },
     { key: "attendance", label: "现场出勤", locked: attendanceLock },
-    { key: "hours", label: "计时与时长", locked: hoursLock },
-    { key: "review", label: "附件3", locked: "" },
+    { key: "hours", label: "服务时长", locked: hoursLock },
     { key: "history", label: "操作记录", locked: "" },
   ].filter(({ key }) => key !== "forms" || can("forms.write"));
   const activeStep = tabs.find((step) => step.key === tab);
@@ -319,11 +334,11 @@ export default function WorkflowPage(
   const canConfirmPreparation =
     members.length > 0 && sessions.length > 0 && hasMaterial;
   const nameOfSession = (sessionID: string) =>
-    sessions.find((s) => s.id === sessionID)?.name || sessionID;
+    sessions.find((s) => s.id === sessionID)?.name || "场次已移除";
   const nameOfPosition = (m: Member) =>
     sessions
       .find((s) => s.id === m.session_id)
-      ?.positions.find((p) => p.id === m.position_id)?.name || m.position_id;
+      ?.positions.find((p) => p.id === m.position_id)?.name || "岗位已移除";
   const rowAttendance = (memberID: string, sessionID: string) =>
     data?.state.attendance
       .filter((a) => a.member_id === memberID && a.session_id === sessionID)
@@ -360,7 +375,7 @@ export default function WorkflowPage(
       ...(key === "session_id" ? { position_id: "" } : {}),
     }));
   const memberForm = (
-    <form
+    <ValidatedForm
       onSubmit={(e) => {
         e.preventDefault();
         void mutate("/members", { members: [member], reason }, "PUT").then(
@@ -464,7 +479,7 @@ export default function WorkflowPage(
           取消修改
         </button>
       )}
-    </form>
+    </ValidatedForm>
   );
   return (
     <WorkspaceShell
@@ -478,14 +493,13 @@ export default function WorkflowPage(
             : "项目协作"
       }
     >
-      <main className="workflow-page">
+      <div className="workflow-page">
         <header className="page-heading">
           <div>
             <p>项目协作 / {data?.project.code}</p>
             <h1>{data?.project.name || "正在读取项目"}</h1>
             <p>
-              {approvalNames[data?.approval || ""]} · {data?.project.status} ·
-              当前版本 {data?.version ?? "—"}
+              {approvalNames[data?.approval || ""]} · {data?.project.status}
             </p>
           </div>
           <button className="button secondary" onClick={() => void load()}>
@@ -502,17 +516,63 @@ export default function WorkflowPage(
             {notice}
           </p>
         )}
-        <nav className="workflow-tabs" aria-label="项目功能" ref={navigation}>
+        <div
+          className="workflow-tabs"
+          role="tablist"
+          aria-label="项目功能"
+          ref={navigation}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget))
+              setFocusedTab(null);
+          }}
+          onKeyDown={(event) => {
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+              return;
+            const enabled = Array.from(
+              event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                '[role="tab"]:not(:disabled)',
+              ),
+            );
+            if (!enabled.length) return;
+            const index = enabled.indexOf(
+              document.activeElement as HTMLButtonElement,
+            );
+            const next =
+              event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? enabled.length - 1
+                  : (index +
+                      (event.key === "ArrowRight" ? 1 : -1) +
+                      enabled.length) %
+                    enabled.length;
+            event.preventDefault();
+            setFocusedTab(enabled[next].dataset.tab || null);
+            enabled[next].focus();
+          }}
+        >
           {tabs.map(({ key, label, locked }) => (
             <button
               key={key}
+              id={`${tabID}-${key}`}
+              data-tab={key}
+              type="button"
               role="tab"
+              tabIndex={
+                key ===
+                (focusedTab ||
+                  tabs.find((step) => step.key === tab && !step.locked)?.key ||
+                  tabs.find((step) => !step.locked)?.key)
+                  ? 0
+                  : -1
+              }
               aria-selected={tab === key}
               aria-label={label}
               disabled={!!locked || !data}
               title={locked || undefined}
               className={tab === key ? "active" : ""}
               onClick={() => {
+                setFocusedTab(key);
                 setTab(key);
                 setQR("");
               }}
@@ -521,9 +581,14 @@ export default function WorkflowPage(
               {locked && <small>待开放</small>}
             </button>
           ))}
-        </nav>
+        </div>
         {data && (
-          <>
+          <div
+            id={panelID}
+            role="tabpanel"
+            aria-labelledby={`${tabID}-${tab}`}
+            tabIndex={0}
+          >
             {availability?.attendance &&
               !availability.hours &&
               !locked &&
@@ -583,7 +648,7 @@ export default function WorkflowPage(
                         })
                       }
                     >
-                      确认准备完成，开放现场出勤
+                      确认准备完成
                     </button>
                   ) : (
                     <p>由数据管理员确认准备完成。</p>
@@ -593,10 +658,8 @@ export default function WorkflowPage(
             {tab === "overview" && basics && (
               <section className="panel workflow-panel">
                 <h2>项目基础信息</h2>
-                {data.state.legacy && (
-                  <p>旧流程承接项目，系统未补造历史审批记录。</p>
-                )}
-                <form className="workflow-form" onSubmit={saveBasics}>
+                {data.state.legacy && <p>历史项目，暂无审批记录。</p>}
+                <ValidatedForm className="workflow-form" onSubmit={saveBasics}>
                   <fieldset
                     disabled={
                       busy ||
@@ -625,6 +688,9 @@ export default function WorkflowPage(
                               type={key.endsWith("_on") ? "date" : "text"}
                               required
                               maxLength={key === "location" ? 160 : 80}
+                              min={
+                                key === "ends_on" ? basics.starts_on : undefined
+                              }
                               value={String(basics[key as keyof Basics] || "")}
                               onChange={(e) =>
                                 setBasics({ ...basics, [key]: e.target.value })
@@ -639,9 +705,6 @@ export default function WorkflowPage(
                       onChange={setBasics}
                     />
                     <h3>场次与岗位</h3>
-                    <p className="workflow-note">
-                      项目日期按北京时间计算，包含开始日00:00至结束日全天。场次起止时间须在此范围内。
-                    </p>
                     {basics.sessions.map((s, index) => (
                       <section className="workflow-session" key={s.id}>
                         <div className="workflow-grid">
@@ -660,6 +723,12 @@ export default function WorkflowPage(
                             <input
                               type="datetime-local"
                               required
+                              min={localTime(
+                                `${basics.starts_on}T00:00:00+08:00`,
+                              )}
+                              max={localTime(
+                                `${basics.ends_on}T23:59:59+08:00`,
+                              )}
                               value={localTime(s.start)}
                               onChange={(e) =>
                                 editSession(index, "start", iso(e.target.value))
@@ -671,6 +740,13 @@ export default function WorkflowPage(
                             <input
                               type="datetime-local"
                               required
+                              min={localTime(
+                                `${basics.starts_on}T00:00:00+08:00`,
+                              )}
+                              max={localTime(
+                                `${basics.ends_on}T23:59:59+08:00`,
+                              )}
+                              data-after={localTime(s.start)}
                               value={localTime(s.end)}
                               onChange={(e) =>
                                 editSession(index, "end", iso(e.target.value))
@@ -763,7 +839,7 @@ export default function WorkflowPage(
                         : "保存基础信息"}
                     </button>
                   </fieldset>
-                </form>
+                </ValidatedForm>
                 {can("proposal.submit") &&
                   ["draft", "returned"].includes(data.approval) && (
                     <button
@@ -940,9 +1016,7 @@ export default function WorkflowPage(
                           await navigator.clipboard.writeText(
                             `${location.origin}/signup?project=${id}&form=${data.state.form.id}`,
                           );
-                          setNotice(
-                            "报名问卷链接已复制，可以发给成员自行填写。",
-                          );
+                          setNotice("已复制。");
                         } catch {
                           setError("复制失败，请打开问卷后复制地址。");
                         } finally {
@@ -969,7 +1043,7 @@ export default function WorkflowPage(
                     导出名单与时长
                   </a>
                 )}
-                <div className="workflow-table">
+                <ScrollRegion label="成员名单" className="workflow-table">
                   <table>
                     <thead>
                       <tr>
@@ -1088,66 +1162,55 @@ export default function WorkflowPage(
                       )}
                     </tbody>
                   </table>
-                </div>
+                </ScrollRegion>
                 {can("members.write") && (
                   <>
                     <div id="member-registration">{memberForm}</div>
                     <h3>批量导入</h3>
-                    <p>
-                      先选择上方场次和岗位，粘贴制表符分隔的姓名、编号、部门、电话、备注。名单会应用到已选的全部场次和岗位。
-                    </p>
-                    <textarea
-                      aria-label="批量成员"
-                      value={paste}
-                      onChange={(e) => setPaste(e.target.value)}
-                      placeholder="张三&#9;00123&#9;学院&#9;138…"
-                    />
-                    <button
-                      className="button secondary"
-                      disabled={
-                        busy ||
-                        !member.session_id ||
-                        !member.position_id ||
-                        !paste.trim()
-                      }
-                      onClick={() => {
-                        const rows = paste
-                          .trim()
-                          .split(/\r?\n/)
-                          .map((line) => {
-                            const [
-                              name,
-                              number,
-                              department = "",
-                              phone = "",
-                              notes = "",
-                            ] = line.split("\t");
-                            return {
+                    <TableImport
+                      label="从表格粘贴成员"
+                      busy={busy}
+                      columns={[
+                        { key: "name", label: "姓名", required: true },
+                        {
+                          key: "number",
+                          label: "编号",
+                          required: true,
+                          validate: (value, rows) =>
+                            !!value &&
+                            rows.filter((row) => row.number === value)
+                              .length === 1,
+                        },
+                        { key: "department", label: "部门" },
+                        { key: "phone", label: "电话" },
+                        { key: "notes", label: "备注" },
+                      ]}
+                      onImport={async (rows) => {
+                        if (!memberAssignments(member).length) {
+                          setError("请先选择场次和岗位。");
+                          return false;
+                        }
+                        return mutate(
+                          "/members",
+                          {
+                            members: rows.map((row) => ({
                               ...emptyMember,
-                              name,
-                              number,
-                              department,
-                              phone,
-                              notes,
+                              ...row,
                               assignments: memberAssignments(member),
                               session_id: member.session_id,
                               position_id: member.position_id,
-                            };
-                          });
-                        void mutate(
-                          "/members",
-                          { members: rows, reason: "批量导入" },
+                            })),
+                            reason: "批量导入",
+                          },
                           "PUT",
                         );
                       }}
-                    >
-                      校验并导入
-                    </button>
+                    />
                     <h3>核实手动填写的身份</h3>
                     <p>
                       账号登录报名的身份已确认，无需人工核实。这里只处理手动填写的成员。
                     </p>
-                    <form
+                    <ValidatedForm
                       className="workflow-form"
                       onSubmit={(e) => {
                         e.preventDefault();
@@ -1155,15 +1218,27 @@ export default function WorkflowPage(
                         setBusy(true);
                         request<{ credential: string }>(
                           `${base}/members/access`,
-                          access,
+                          {
+                            ...access,
+                            username:
+                              accessMode === "account" ? access.username : "",
+                            revoke: accessMode === "revoke",
+                          },
                           "POST",
                           data.version,
                         )
                           .then((result) => {
-                            setNotice(
+                            setAccessLink(
                               result.credential
-                                ? `请交给本人保存修改入口：${location.origin}/signup?project=${id}#credential=${encodeURIComponent(result.credential)}`
-                                : "身份绑定或凭证撤销已完成",
+                                ? `${location.origin}/signup?project=${encodeURIComponent(id)}#credential=${encodeURIComponent(result.credential)}`
+                                : "",
+                            );
+                            setNotice(
+                              accessMode === "account"
+                                ? "账号已绑定。"
+                                : accessMode === "revoke"
+                                  ? "报名访问已撤销。"
+                                  : "修改链接已生成。",
                             );
                             void load();
                           })
@@ -1194,14 +1269,33 @@ export default function WorkflowPage(
                         </select>
                       </label>
                       <label>
-                        核实后的系统账号（留空则签发凭证）
-                        <input
-                          value={access.username}
-                          onChange={(e) =>
-                            setAccess({ ...access, username: e.target.value })
+                        操作
+                        <select
+                          value={accessMode}
+                          onChange={(event) =>
+                            setAccessMode(event.target.value)
                           }
-                        />
+                        >
+                          <option value="link">生成报名修改链接</option>
+                          <option value="account">绑定账号</option>
+                          <option value="revoke">撤销报名访问</option>
+                        </select>
                       </label>
+                      {accessMode === "account" && (
+                        <label>
+                          登录账号
+                          <input
+                            required
+                            value={access.username}
+                            onChange={(event) =>
+                              setAccess({
+                                ...access,
+                                username: event.target.value,
+                              })
+                            }
+                          />
+                        </label>
+                      )}
                       <label>
                         核实依据
                         <input
@@ -1212,20 +1306,43 @@ export default function WorkflowPage(
                           }
                         />
                       </label>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={access.revoke}
-                          onChange={(e) =>
-                            setAccess({ ...access, revoke: e.target.checked })
-                          }
-                        />
-                        撤销现有凭证
-                      </label>
+                      <p>
+                        {accessMode === "revoke"
+                          ? "现有修改链接及账号绑定将失效。"
+                          : "原修改链接将失效。"}
+                      </p>
                       <button className="button secondary" disabled={busy}>
-                        确认身份操作
+                        {accessMode === "account"
+                          ? "绑定账号"
+                          : accessMode === "revoke"
+                            ? "撤销报名访问"
+                            : "生成修改链接"}
                       </button>
-                    </form>
+                    </ValidatedForm>
+                    {accessLink && (
+                      <div className="workflow-session">
+                        <h3>报名修改链接</h3>
+                        <p>请本人保存，勿转发。</p>
+                        <textarea
+                          readOnly
+                          aria-label="报名修改链接"
+                          value={accessLink}
+                        />
+                        <button
+                          className="button secondary"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(accessLink);
+                              setNotice("已复制。");
+                            } catch {
+                              setError("复制失败，请手动复制链接。");
+                            }
+                          }}
+                        >
+                          复制链接
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
               </section>
@@ -1237,7 +1354,7 @@ export default function WorkflowPage(
                   签到、签退只记录出勤事实，不自动生成时长。关闭窗口后的补签或修正由数据管理员处理。
                 </p>
                 {can("attendance.manage") && (
-                  <form
+                  <ValidatedForm
                     className="workflow-form"
                     onSubmit={(e) => {
                       e.preventDefault();
@@ -1263,7 +1380,7 @@ export default function WorkflowPage(
                         </select>
                       </label>
                       <label>
-                        窗口
+                        类型
                         <select
                           value={window.action}
                           onChange={(e) =>
@@ -1282,8 +1399,8 @@ export default function WorkflowPage(
                             setWindow({ ...window, mode: e.target.value })
                           }
                         >
-                          <option value="manual">手动开关</option>
-                          <option value="scheduled">按时间自动开放</option>
+                          <option value="manual">手动</option>
+                          <option value="scheduled">定时</option>
                         </select>
                       </label>
                       {window.mode === "manual" ? (
@@ -1295,7 +1412,7 @@ export default function WorkflowPage(
                               setWindow({ ...window, open: e.target.checked })
                             }
                           />
-                          开放窗口
+                          开放签到 / 签退
                         </label>
                       ) : (
                         <>
@@ -1318,6 +1435,7 @@ export default function WorkflowPage(
                             <input
                               required
                               type="datetime-local"
+                              data-after={localTime(window.start)}
                               value={localTime(window.end)}
                               onChange={(e) =>
                                 setWindow({
@@ -1331,9 +1449,9 @@ export default function WorkflowPage(
                       )}
                     </div>
                     <button className="button primary" disabled={busy}>
-                      保存窗口并更新二维码
+                      保存设置
                     </button>
-                  </form>
+                  </ValidatedForm>
                 )}
                 {data.state.windows.map((w) => (
                   <div
@@ -1365,7 +1483,7 @@ export default function WorkflowPage(
                       className="button secondary"
                       onClick={() => setWindow({ ...w, token: undefined })}
                     >
-                      修改窗口
+                      修改设置
                     </button>
                   </div>
                 ))}
@@ -1383,7 +1501,7 @@ export default function WorkflowPage(
                     onChange={(e) => setReason(e.target.value)}
                   />
                 </label>
-                <div className="workflow-table">
+                <ScrollRegion label="现场出勤" className="workflow-table">
                   <table>
                     <thead>
                       <tr>
@@ -1440,16 +1558,13 @@ export default function WorkflowPage(
                         ))}
                     </tbody>
                   </table>
-                </div>
+                </ScrollRegion>
               </section>
             )}
             {tab === "forms" && can("forms.write") && !locked && (
               <section className="panel workflow-panel">
                 <h2>问卷与二维码</h2>
-                <p className="workflow-note">
-                  招募问卷固定收集姓名、学号、电话、参加场次和岗位（可多选）、其他备注。保存开放后即可复制链接或下载二维码分发。
-                </p>
-                <form
+                <ValidatedForm
                   className="workflow-form"
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -1527,12 +1642,13 @@ export default function WorkflowPage(
                         setForm({ ...form, rotate: e.target.checked })
                       }
                     />
-                    撤销旧链接并生成新标识
+                    更换链接和二维码
                   </label>
+                  {form.rotate && <p>原链接和二维码将失效。</p>}
                   <button className="button primary" disabled={busy}>
                     保存问卷
                   </button>
-                </form>
+                </ValidatedForm>
                 {[data.state.form, data.state.intent_form].map(
                   (f, i) =>
                     f.id && (
@@ -1572,7 +1688,7 @@ export default function WorkflowPage(
             )}
             {tab === "hours" && !locked && (
               <section className="panel workflow-panel">
-                <h2>计时与时长</h2>
+                <h2>服务时长</h2>
                 {!can("hours.write") ? (
                   <>
                     <p>时长登记、补录和修正由数据管理员负责。</p>
@@ -1581,7 +1697,7 @@ export default function WorkflowPage(
                         <thead>
                           <tr>
                             <th>成员</th>
-                            <th>已公布认定小时</th>
+                            <th>已公布认定时长（小时）</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1603,168 +1719,200 @@ export default function WorkflowPage(
                   </>
                 ) : (
                   <>
-                    <p>
-                      输入非负整数小时；空值表示未登记，0
-                      表示明确计零。勾选后可批量填充。
-                    </p>
-                    <label>
-                      记录类型
-                      <select
-                        value={source}
-                        onChange={(e) => setSource(e.target.value)}
-                      >
-                        {["登记", "补录", "更正"].map((v) => (
-                          <option key={v}>{v}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      补录或更正依据
-                      <input
-                        value={reason}
-                        onChange={(e) => setReason(e.target.value)}
-                      />
-                    </label>
-                    <div className="activity-actions">
-                      <input
-                        aria-label="批量小时数"
-                        type="number"
-                        min={0}
-                        step={1}
-                        id="batch-hours"
-                      />
-                      <button
-                        className="button secondary"
-                        onClick={() => {
-                          const input = document.getElementById(
-                            "batch-hours",
-                          ) as HTMLInputElement;
-                          if (
-                            input.value !== "" &&
-                            Number.isInteger(Number(input.value)) &&
-                            Number(input.value) >= 0
-                          )
+                    <ValidatedForm
+                      className="workflow-form"
+                      onSubmit={async (event) => {
+                        event.preventDefault();
+                        const rows = Object.entries(hourValues)
+                          .filter(([, value]) => value !== "")
+                          .map(([member_id, value]) => ({
+                            member_id,
+                            hours: Number(value),
+                            recognized: null,
+                            source,
+                            reason,
+                          }));
+                        if (
+                          rows.length &&
+                          (await mutate("/hours", { rows }, "PUT"))
+                        )
+                          setHourValues({});
+                      }}
+                    >
+                      <label>
+                        记录类型
+                        <select
+                          value={source}
+                          onChange={(e) => setSource(e.target.value)}
+                        >
+                          {["登记", "补录", "更正"].map((v) => (
+                            <option key={v}>{v}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        补录或更正依据
+                        <input
+                          required={source !== "登记"}
+                          value={reason}
+                          onChange={(e) => setReason(e.target.value)}
+                        />
+                      </label>
+                      <div className="activity-actions">
+                        <input
+                          aria-label="批量时长（小时）"
+                          type="number"
+                          min={0}
+                          step={1}
+                          max={100000}
+                          id="batch-hours"
+                        />
+                        <button
+                          type="button"
+                          disabled={busy || !selected.length}
+                          className="button secondary"
+                          onClick={() => {
+                            const input = document.getElementById(
+                              "batch-hours",
+                            ) as HTMLInputElement;
+                            if (!input.value || !input.validity.valid) {
+                              input.setAttribute("aria-invalid", "true");
+                              input.focus();
+                              return;
+                            }
+                            input.removeAttribute("aria-invalid");
                             setHourValues((v) => ({
                               ...v,
                               ...Object.fromEntries(
                                 selected.map((id) => [id, input.value]),
                               ),
                             }));
-                        }}
+                          }}
+                        >
+                          填入选中人员
+                        </button>
+                      </div>
+                      <ScrollRegion
+                        label="服务时长登记"
+                        className="workflow-table"
                       >
-                        填入选中人员
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>选择</th>
+                              <th>姓名</th>
+                              <th>场次</th>
+                              <th>意向</th>
+                              <th>登记时长（小时）</th>
+                              <th>认定时长（小时）</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {members.map((m) => {
+                              const h = data.state.hours?.find(
+                                (h) => h.member_id === m.id,
+                              );
+                              return (
+                                <tr key={m.id}>
+                                  <td>
+                                    <input
+                                      type="checkbox"
+                                      aria-label={`选择${m.name}`}
+                                      checked={selected.includes(m.id)}
+                                      onChange={(e) =>
+                                        setSelected((v) =>
+                                          e.target.checked
+                                            ? [...v, m.id]
+                                            : v.filter((id) => id !== m.id),
+                                        )
+                                      }
+                                    />
+                                  </td>
+                                  <td>{m.name}</td>
+                                  <td>{nameOfSession(m.session_id)}</td>
+                                  <td>{m.intent}</td>
+                                  <td>
+                                    <input
+                                      aria-label={`${m.name}登记时长（小时）`}
+                                      type="number"
+                                      step={1}
+                                      min={0}
+                                      max={100000}
+                                      placeholder="未登记"
+                                      value={hourValues[m.id] ?? h?.hours ?? ""}
+                                      onChange={(e) =>
+                                        setHourValues((v) => ({
+                                          ...v,
+                                          [m.id]: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </td>
+                                  <td>{h?.recognized ?? "未认定"}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </ScrollRegion>
+                      <button
+                        className="button primary"
+                        disabled={
+                          busy ||
+                          !Object.values(hourValues).some(
+                            (value) => value !== "",
+                          )
+                        }
+                      >
+                        保存时长
                       </button>
-                    </div>
-                    <div className="workflow-table">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>选择</th>
-                            <th>姓名</th>
-                            <th>场次</th>
-                            <th>意向</th>
-                            <th>登记小时</th>
-                            <th>认定小时</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {members.map((m) => {
-                            const h = data.state.hours?.find(
-                              (h) => h.member_id === m.id,
-                            );
-                            return (
-                              <tr key={m.id}>
-                                <td>
-                                  <input
-                                    type="checkbox"
-                                    aria-label={`选择${m.name}`}
-                                    checked={selected.includes(m.id)}
-                                    onChange={(e) =>
-                                      setSelected((v) =>
-                                        e.target.checked
-                                          ? [...v, m.id]
-                                          : v.filter((id) => id !== m.id),
-                                      )
-                                    }
-                                  />
-                                </td>
-                                <td>{m.name}</td>
-                                <td>{nameOfSession(m.session_id)}</td>
-                                <td>{m.intent}</td>
-                                <td>
-                                  <input
-                                    aria-label={`${m.name}登记小时`}
-                                    type="number"
-                                    step={1}
-                                    min={0}
-                                    value={hourValues[m.id] ?? h?.hours ?? ""}
-                                    onChange={(e) =>
-                                      setHourValues((v) => ({
-                                        ...v,
-                                        [m.id]: e.target.value,
-                                      }))
-                                    }
-                                  />
-                                </td>
-                                <td>{h?.recognized ?? "未认定"}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                    <button
-                      className="button primary"
-                      disabled={busy || !Object.keys(hourValues).length}
-                      onClick={() => {
-                        const rows = Object.entries(hourValues)
-                          .filter(([, v]) => v !== "")
-                          .map(([member_id, v]) => ({
-                            member_id,
-                            hours: Number(v),
-                            recognized: null,
-                            source,
-                            reason,
-                          }));
-                        void mutate("/hours", { rows }, "PUT").then((ok) => {
-                          if (ok) setHourValues({});
-                        });
-                      }}
-                    >
-                      保存时长 / 批量补录
-                    </button>
+                    </ValidatedForm>
                     <h3>从表格导入时长</h3>
-                    <p>
-                      每行“人员编号 + 制表符 +
-                      整数小时”，填写上方补录或更正依据后保存。
-                    </p>
-                    <textarea
-                      aria-label="时长导入"
-                      value={paste}
-                      onChange={(e) => setPaste(e.target.value)}
-                    />
-                    <button
-                      disabled={busy || !paste.trim()}
-                      className="button secondary"
-                      onClick={() => {
-                        const lines = paste.trim().split(/\r?\n/);
-                        const rows = lines.map((line) => {
-                          const [number, hours] = line.split("\t");
-                          return {
-                            member_id:
-                              members.find((m) => m.number === number)?.id ||
-                              "",
-                            hours: hours?.trim() ? Number(hours) : null,
-                            recognized: null,
-                            source,
-                            reason,
-                          };
-                        });
-                        void mutate("/hours", { rows }, "PUT");
+                    <TableImport
+                      label="从表格粘贴时长"
+                      busy={busy}
+                      columns={[
+                        {
+                          key: "number",
+                          label: "人员编号",
+                          required: true,
+                          validate: (value, rows) =>
+                            members.some((member) => member.number === value) &&
+                            rows.filter((row) => row.number === value)
+                              .length === 1,
+                        },
+                        {
+                          key: "hours",
+                          label: "时长（小时）",
+                          type: "number",
+                          required: true,
+                          min: 0,
+                          max: 100000,
+                          step: 1,
+                        },
+                      ]}
+                      onImport={async (rows) => {
+                        if (source !== "登记" && !reason.trim()) {
+                          setError("请填写补录或更正依据。");
+                          return false;
+                        }
+                        return mutate(
+                          "/hours",
+                          {
+                            rows: rows.map((row) => ({
+                              member_id: members.find(
+                                (member) => member.number === row.number,
+                              )!.id,
+                              hours: Number(row.hours),
+                              recognized: null,
+                              source,
+                              reason,
+                            })),
+                          },
+                          "PUT",
+                        );
                       }}
-                    >
-                      校验并导入时长
-                    </button>
+                    />
                   </>
                 )}
               </section>
@@ -1773,7 +1921,7 @@ export default function WorkflowPage(
               <section className="panel workflow-panel">
                 <h2>附件1</h2>
                 {can("materials.write") ? (
-                  <form
+                  <ValidatedForm
                     className="workflow-form"
                     onSubmit={(e) => {
                       e.preventDefault();
@@ -1794,9 +1942,9 @@ export default function WorkflowPage(
                       disabled={busy}
                       onClick={() => void mutate("/material/generate", {})}
                     >
-                      校验并生成正式 DOCX
+                      生成 Word
                     </button>
-                  </form>
+                  </ValidatedForm>
                 ) : (
                   <p>附件1由数据管理员编辑生成，可在下方下载已生成的版本。</p>
                 )}
@@ -1817,7 +1965,7 @@ export default function WorkflowPage(
                         onClick={() => setPreviewFile(file)}
                       >
                         <Icon name="eye" />
-                        预览 / 下载 Word
+                        预览
                       </button>
                     </div>
                   ))
@@ -1835,41 +1983,35 @@ export default function WorkflowPage(
                 )}
               </section>
             )}
-            {tab === "review" && (
-              <section className="panel workflow-panel attachment-placeholder">
-                <Icon name="file" />
-                <h2>附件3</h2>
-                <p>功能待完善</p>
-                <p>后续在此补充附件3的生成与相关处理机制。</p>
-              </section>
-            )}
             {tab === "history" && (
               <section className="panel workflow-panel">
                 <h2>操作记录</h2>
                 {history.events.map((event) => (
                   <article key={event.id} className="workflow-session">
                     <strong>
-                      {event.action} · 版本 {event.version}
+                      {historyActionNames[event.action] || "更新项目"}
                     </strong>
                     <p>
                       {event.actor} ·{" "}
                       {new Date(event.created_at).toLocaleString()} ·{" "}
-                      {event.reason}
+                      {event.action === "members.delete"
+                        ? event.reason.replace(/，成员ID：[^，]+$/, "")
+                        : event.reason}
                     </p>
                   </article>
                 ))}
               </section>
             )}
-          </>
+          </div>
         )}
-        {!data && !error && <p>正在读取服务器数据…</p>}
+        {!data && !error && <p role="status">正在加载…</p>}
         <button
           className="button secondary"
           onClick={() => onNavigate("/projects")}
         >
           返回项目台账
         </button>
-      </main>
+      </div>
     </WorkspaceShell>
   );
 }

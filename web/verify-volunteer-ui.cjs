@@ -1,4 +1,4 @@
-const { chromium } = require("playwright-core");
+const { launchBrowser, baseURL } = require("./browser-options.cjs");
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const os = require("node:os");
@@ -7,7 +7,7 @@ const path = require("node:path");
 (async () => {
   const output = path.join(os.tmpdir(), "volun-volunteer-ui");
   await fs.mkdir(output, { recursive: true });
-  const browser = await chromium.launch({ executablePath: "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", headless: true });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     const errors = [];
@@ -33,7 +33,7 @@ const path = require("node:path");
       await page.screenshot({ path: path.join(output, `${name}.png`), fullPage: true });
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, name);
     };
-    await page.goto("http://127.0.0.1:5173/recruitment");
+    await page.goto(`${baseURL}/recruitment`);
     await page.getByRole("heading", { name: project.name }).waitFor();
     await shot("recruitment-desktop");
     await page.getByRole("button", { name: "完善资料后报名" }).click();
@@ -43,7 +43,7 @@ const path = require("node:path");
     await page.getByRole("button", { name: "继续报名", exact: true }).click();
     await page.getByRole("button", { name: "提交报名", exact: true }).waitFor();
     assert.match(page.url(), /signup\?project=p1&form=f1/);
-    await page.goto("http://127.0.0.1:5173/my-services");
+    await page.goto(`${baseURL}/my-services`);
     await page.getByRole("heading", { name: "图书馆整理服务" }).waitFor();
     await page.getByLabel("服务记录").selectOption("已参加");
     assert.equal(await page.getByRole("heading", { name: "社区便民服务" }).count(), 0);
@@ -52,11 +52,11 @@ const path = require("node:path");
       await page.getByRole("combobox", { name: "外观模式" }).selectOption(theme);
       await page.setViewportSize({ width: 390, height: 844 });
       await shot(`services-mobile-${theme}`);
-      await page.goto("http://127.0.0.1:5173/recruitment");
+      await page.goto(`${baseURL}/recruitment`);
       await page.getByRole("heading", { name: project.name }).waitFor();
       await shot(`recruitment-mobile-${theme}`);
       await page.setViewportSize({ width: 1440, height: 1000 });
-      await page.goto("http://127.0.0.1:5173/my-services");
+      await page.goto(`${baseURL}/my-services`);
       await page.getByRole("heading", { name: "图书馆整理服务" }).waitFor();
     }
     assert.deepEqual(errors, []);

@@ -34,7 +34,6 @@ export default function AttachmentMaterialFields({
     <>
       <fieldset className="material-section">
         <legend>项目基本信息</legend>
-        <p>项目名称、服务地点与立项信息保持一致。</p>
         <div className="workflow-grid">
           <label>
             项目名称
@@ -48,15 +47,14 @@ export default function AttachmentMaterialFields({
           </label>
         </div>
         <label>
-          活动描述（500字以内）
+          活动描述
           <textarea
-            maxLength={500}
+            data-max-length={500}
             rows={5}
             value={value.description || ""}
             onChange={(event) => update("description", event.target.value)}
             placeholder="写清日期、时间、岗位分工与每天拟录入时长。"
           />
-          <small>{(value.description || "").length} / 500</small>
         </label>
       </fieldset>
       <fieldset className="material-section">
@@ -85,7 +83,7 @@ export default function AttachmentMaterialFields({
             </select>
           </label>
           <label>
-            每日每人预计最长时长
+            每人每日预计时长（小时）
             <input
               type="number"
               min={0}
@@ -99,7 +97,6 @@ export default function AttachmentMaterialFields({
                 )
               }
             />
-            <small>小时</small>
           </label>
           {input("checkin_start", "系统自动开始打卡时间", "time")}
           {input("checkin_end", "系统自动截止打卡时间", "time")}
@@ -139,30 +136,28 @@ export default function AttachmentMaterialFields({
             />
           </label>
         </div>
-        <p>志愿者保障由立项信息统一维护，附件1自动使用已审批的内容。</p>
+        <p>志愿者保障请在立项中修改。</p>
         <VolunteerGuarantees value={basics} />
       </fieldset>
       <fieldset className="material-section">
         <legend>岗位设置</legend>
-        <p>
-          岗位名称、人数和填写的岗位描述将写入附件1，描述不自动追加工作时间或拟录入时长。
-        </p>
         {basics.sessions.flatMap((session) =>
           session.positions.map((position) => (
             <p key={`${session.id}:${position.id}`}>
-              {session.name} / {position.name} · {position.capacity}人 · 拟录入
-              {position.hours ?? "未填写"}小时
+              {session.name} / {position.name} · {position.capacity}人 ·{" "}
+              {position.hours == null
+                ? "时长未填写"
+                : `预计 ${position.hours} 小时`}
             </p>
           )),
         )}
         {!basics.sessions.some((session) => session.positions.length) && (
           <p>尚未设置岗位，请先完善立项中的场次与岗位。</p>
         )}
-        <p>场次与岗位仅在立项中编辑，此处用于核对附件内容。</p>
+        <p>场次与岗位请在立项中修改。</p>
       </fieldset>
       <fieldset className="material-section">
         <legend>联系人与附件补充</legend>
-        <p>联系方式由环境配置统一提供；其他补充说明和培训信息可继续填写。</p>
         <div className="workflow-grid">
           {input("contact_name", "联系人姓名", "text", true)}
           {input("contact_phone", "联系人电话", "tel", true)}

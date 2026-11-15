@@ -1,12 +1,13 @@
-import Sidebar from "./components/Sidebar.tsx";
-import ThemeSelect from "./components/ThemeSelect.tsx";
+import ValidatedForm from "./components/ValidatedForm.tsx";
+import ScrollRegion from "./components/ScrollRegion.tsx";
+import WorkspaceShell from "./components/WorkspaceShell.tsx";
+import Modal from "./components/Modal.tsx";
 import { asApiError } from "./lib/api.ts";
 import type {
   ActivityHomeProps,
   Dashboard,
   Project,
   CreateProject,
-  ModalProps,
 } from "./types.ts";
 import React, { useEffect, useRef, useState } from "react";
 import "./activity.css";
@@ -86,38 +87,6 @@ function Badge({ status }: { status: string }) {
     </span>
   );
 }
-function Modal({ title, children, onClose, locked = false }: ModalProps) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    ref.current?.showModal();
-  }, []);
-  return (
-    <dialog
-      ref={ref}
-      className="activity-dialog"
-      onCancel={(e) => {
-        e.preventDefault();
-        if (!locked) onClose();
-      }}
-      aria-labelledby="activity-dialog-title"
-    >
-      <div className="activity-dialog-head">
-        <h2 id="activity-dialog-title">{title}</h2>
-        <button
-          type="button"
-          onClick={onClose}
-          disabled={locked}
-          className="activity-icon-button"
-          aria-label="关闭弹窗"
-        >
-          <ActivityIcon name="close" />
-        </button>
-      </div>
-      {children}
-    </dialog>
-  );
-}
-
 export default function ActivityHome({
   session,
   api,
@@ -133,8 +102,7 @@ export default function ActivityHome({
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true);
   const [query, setQuery] = useState(""),
-    [view, setView] = useState("all"),
-    [menu, setMenu] = useState(false);
+    [view, setView] = useState("all");
   const [creating, setCreating] = useState(false),
     [form, setForm] = useState(initialForm),
     [saving, setSaving] = useState(false),
@@ -284,438 +252,402 @@ export default function ActivityHome({
     ["未予认定", ["驳回"]],
   ];
   return (
-    <div className="activity-shell">
-      <Sidebar
-        session={session}
-        route="/activity"
-        onNavigate={onNavigate}
-        open={menu}
-        onClose={() => setMenu(false)}
-      />
-      <div className="profile-main">
-        <header className="topbar activity-topbar">
+    <WorkspaceShell
+      session={session}
+      route="/activity"
+      crumb="工作台"
+      onNavigate={onNavigate}
+      logout={logout}
+      logoutPending={logoutPending}
+    >
+      <div className="page-heading">
+        <div>
+          <h1>活动管理工作台</h1>
+          <p>
+            {isSuper
+              ? "查看全平台项目，跟进志愿服务筹备与协作。"
+              : "查看我负责的项目，让志愿服务有序开展。"}
+          </p>
+        </div>
+        <div className="activity-actions">
           <button
-            className="activity-icon-button activity-mobile-menu"
-            aria-label="展开导航"
-            aria-expanded={menu}
-            onClick={() => setMenu(!menu)}
+            className="button secondary"
+            onClick={refresh}
+            disabled={loading}
           >
-            <ActivityIcon name="menu" />
+            <Icon name="refresh" />
+            {loading ? "正在刷新…" : "刷新数据"}
           </button>
-          <span>
-            工作空间 <b>/</b> <strong>工作台</strong>
-          </span>
-          <div className="activity-top-actions">
-            <ThemeSelect />
-            <span className="activity-today">
-              {new Date().toLocaleDateString("zh-CN", {
-                month: "long",
-                day: "numeric",
-                weekday: "long",
-              })}
-            </span>
+          <button
+            className="button primary"
+            disabled={!canCreate}
+            onClick={startCreate}
+          >
+            <ActivityIcon name="plus" />
+            新建项目
+          </button>
+        </div>
+      </div>
+      {parentError && (
+        <p className="error" role="alert">
+          {parentError}
+        </p>
+      )}
+      {notice && (
+        <p className="success" role="status">
+          {notice}
+        </p>
+      )}
+      <section className="activity-hero">
+        <div>
+          <h2>你好，{name}</h2>
+          <p>
+            {data
+              ? data.summary.pending_count
+                ? `有 ${data.summary.pending_count} 个项目需要跟进，先从待办开始。`
+                : "当前没有待跟进项目，准备好开启下一次服务了吗？"
+              : "在一个地方查看项目进度、整理待办、开始新的服务。"}
+          </p>
+          <div className="activity-actions">
+            <button
+              className="button primary"
+              onClick={() => focusSection(tasksRef)}
+            >
+              <ActivityIcon name="check" />
+              查看我的待办
+            </button>
             <button
               className="button secondary"
-              onClick={logout}
-              disabled={logoutPending}
+              onClick={() => focusSection(recentRef)}
             >
-              <Icon name="logout" />
-              {logoutPending ? "正在退出…" : "退出登录"}
+              查看近期项目
+              <Icon name="arrow" />
             </button>
           </div>
-        </header>
-        <main className="activity-content">
-          <div className="page-heading">
-            <div>
-              <h1>活动管理工作台</h1>
-              <p>
-                {isSuper
-                  ? "查看全平台项目，跟进志愿服务筹备与协作。"
-                  : "查看我负责的项目，让志愿服务有序开展。"}
-              </p>
-            </div>
-            <div className="activity-actions">
-              <button
-                className="button secondary"
-                onClick={refresh}
-                disabled={loading}
-              >
-                <Icon name="refresh" />
-                {loading ? "正在刷新…" : "刷新数据"}
-              </button>
-              <button
-                className="button primary"
-                disabled={!canCreate}
-                onClick={startCreate}
-              >
-                <ActivityIcon name="plus" />
-                新建项目
-              </button>
-            </div>
+        </div>
+        <div className="activity-hero-art" aria-hidden="true">
+          <div className="activity-art-sheet">
+            <Icon name="heart" />
+            <i />
+            <i />
+            <i />
           </div>
-          {parentError && (
-            <p className="error" role="alert">
-              {parentError}
-            </p>
-          )}
-          {notice && (
-            <p className="success" role="status">
-              {notice}
-            </p>
-          )}
-          <section className="activity-hero">
-            <div>
-              <h2>你好，{name}</h2>
-              <p>
-                {data
-                  ? data.summary.pending_count
-                    ? `有 ${data.summary.pending_count} 个项目需要跟进，先从待办开始。`
-                    : "当前没有待跟进项目，准备好开启下一次服务了吗？"
-                  : "在一个地方查看项目进度、整理待办、开始新的服务。"}
-              </p>
-              <div className="activity-actions">
-                <button
-                  className="button primary"
-                  onClick={() => focusSection(tasksRef)}
-                >
-                  <ActivityIcon name="check" />
-                  查看我的待办
-                </button>
-                <button
-                  className="button secondary"
-                  onClick={() => focusSection(recentRef)}
-                >
-                  查看近期项目
-                  <Icon name="arrow" />
-                </button>
-              </div>
+          <span>一起，让善意发生</span>
+        </div>
+      </section>
+      {error ? (
+        <section className="panel activity-error" role="alert">
+          <Icon name="info" />
+          <h2>工作台数据暂时无法读取</h2>
+          <p>{error}</p>
+          <button className="button secondary" onClick={refresh}>
+            重新加载
+          </button>
+        </section>
+      ) : loading && !data ? (
+        <section className="panel activity-loading" role="status">
+          正在读取你的项目与待办…
+        </section>
+      ) : (
+        data && (
+          <>
+            <div className="activity-stats" aria-label="项目统计">
+              {(
+                [
+                  [
+                    "管理项目",
+                    data.summary.project_count,
+                    "项",
+                    "当前权限范围 · 全部时间",
+                    "folder",
+                  ],
+                  [
+                    "正在招募",
+                    data.summary.recruiting_count,
+                    "项",
+                    "当前处于招募阶段",
+                    "people",
+                  ],
+                  [
+                    "已审核认定",
+                    data.summary.recognized_hours ?? "—",
+                    "小时",
+                    "已审核认定时长",
+                    "clock",
+                  ],
+                  [
+                    "待跟进项目",
+                    data.summary.pending_count,
+                    "项",
+                    "立项、筹备、招募、结项、意向",
+                    "check",
+                  ],
+                ] as const
+              )
+                .filter(
+                  ([, , , , icon]) =>
+                    icon !== "clock" || data.summary.recognized_hours !== null,
+                )
+                .map(([label, value, unit, sub, ic]) => (
+                  <section key={label} className="activity-stat">
+                    <div>
+                      <span>{label}</span>
+                      <span className="activity-stat-icon">
+                        <ActivityIcon name={ic} />
+                      </span>
+                    </div>
+                    <strong>
+                      {value}
+                      <small>{unit}</small>
+                    </strong>
+                    <p>{sub}</p>
+                  </section>
+                ))}
             </div>
-            <div className="activity-hero-art" aria-hidden="true">
-              <div className="activity-art-sheet">
-                <Icon name="heart" />
-                <i />
-                <i />
-                <i />
-              </div>
-              <span>一起，让善意发生</span>
-            </div>
-          </section>
-          {error ? (
-            <section className="panel activity-error" role="alert">
-              <Icon name="info" />
-              <h2>工作台数据暂时无法读取</h2>
-              <p>{error}</p>
-              <button className="button secondary" onClick={refresh}>
-                重新加载
-              </button>
-            </section>
-          ) : loading && !data ? (
-            <section className="panel activity-loading" role="status">
-              正在读取你的项目与待办…
-            </section>
-          ) : (
-            data && (
-              <>
-                <div className="activity-stats" aria-label="项目统计">
-                  {(
-                    [
-                      [
-                        "管理项目",
-                        data.summary.project_count,
-                        "项",
-                        "当前权限范围 · 全部时间",
-                        "folder",
-                      ],
-                      [
-                        "正在招募",
-                        data.summary.recruiting_count,
-                        "项",
-                        "当前处于招募阶段",
-                        "people",
-                      ],
-                      [
-                        "已审核认定",
-                        data.summary.recognized_hours ?? "—",
-                        "小时",
-                        data.summary.recognized_hours === null
-                          ? "时长模块暂未接入"
-                          : "仅统计已审核认定时长",
-                        "clock",
-                      ],
-                      [
-                        "待跟进项目",
-                        data.summary.pending_count,
-                        "项",
-                        "立项、筹备、招募、结项、意向",
-                        "check",
-                      ],
-                    ] as const
-                  ).map(([label, value, unit, sub, ic]) => (
-                    <section key={label} className="activity-stat">
-                      <div>
-                        <span>{label}</span>
-                        <span className="activity-stat-icon">
-                          <ActivityIcon name={ic} />
-                        </span>
-                      </div>
-                      <strong>
-                        {value}
-                        <small>{unit}</small>
-                      </strong>
-                      <p>{sub}</p>
-                    </section>
-                  ))}
-                </div>
-                <div className="activity-grid">
-                  <div className="activity-column">
-                    <section
-                      className="panel"
-                      ref={tasksRef}
-                      tabIndex={-1}
-                      aria-labelledby="activity-tasks-title"
-                    >
-                      <div className="activity-panel-heading">
-                        <h2 id="activity-tasks-title">
-                          待我处理{" "}
-                          <span className="activity-count">
-                            {data.summary.pending_count}
-                          </span>
-                        </h2>
-                        <span className="muted">最近更新优先 · 最多 5 项</span>
-                      </div>
-                      {data.tasks.length ? (
-                        data.tasks.map((t) => (
-                          <div className="activity-task" key={t.project_id}>
-                            <span className="activity-task-dot" />
-                            <div>
-                              <h3>{t.project_name}</h3>
-                              <p>{t.instruction}</p>
-                              <Badge status={t.status} />
-                            </div>
-                            <button
-                              className="button secondary"
-                              disabled={detailLoading}
-                              onClick={() => openProject(t.project_id)}
-                            >
-                              查看项目
-                            </button>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="activity-empty">
-                          <span className="activity-empty-icon">
-                            <ActivityIcon name="check" />
-                          </span>
-                          <h3>当前没有待跟进事项</h3>
-                          <p>
-                            项目进入需要活动负责人跟进的阶段后，会显示在这里。
-                          </p>
-                        </div>
-                      )}
-                    </section>
-                    <section
-                      className="panel"
-                      ref={recentRef}
-                      tabIndex={-1}
-                      aria-labelledby="activity-recent-title"
-                    >
-                      <div className="activity-panel-heading">
+            <div className="activity-grid">
+              <div className="activity-column">
+                <section
+                  className="panel"
+                  ref={tasksRef}
+                  tabIndex={-1}
+                  aria-labelledby="activity-tasks-title"
+                >
+                  <div className="activity-panel-heading">
+                    <h2 id="activity-tasks-title">
+                      待我处理{" "}
+                      <span className="activity-count">
+                        {data.summary.pending_count}
+                      </span>
+                    </h2>
+                    <span className="muted">最近更新优先 · 最多 5 项</span>
+                  </div>
+                  {data.tasks.length ? (
+                    data.tasks.map((t) => (
+                      <div className="activity-task" key={t.project_id}>
+                        <span className="activity-task-dot" />
                         <div>
-                          <h2 id="activity-recent-title">近期项目</h2>
-                          <p>
-                            最近更新的 {data.recent_projects.length} 项 ·
-                            项目总数 {data.summary.project_count}
-                          </p>
+                          <h3>{t.project_name}</h3>
+                          <p>{t.instruction}</p>
+                          <Badge status={t.status} />
                         </div>
-                        <label className="activity-search">
-                          <ActivityIcon name="search" />
-                          <input
-                            aria-label="搜索近期项目名称或编号"
-                            placeholder="搜索名称或编号"
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                          />
-                        </label>
-                      </div>
-                      <div
-                        className="activity-tabs"
-                        role="group"
-                        aria-label="近期项目视图"
-                      >
                         <button
-                          className={view === "all" ? "selected" : ""}
-                          aria-pressed={view === "all"}
-                          onClick={() => setView("all")}
+                          className="button secondary"
+                          disabled={detailLoading}
+                          onClick={() => openProject(t.project_id)}
                         >
-                          全部近期项目
-                        </button>
-                        <button
-                          className={view === "pending" ? "selected" : ""}
-                          aria-pressed={view === "pending"}
-                          onClick={() => setView("pending")}
-                        >
-                          待跟进
+                          查看项目
                         </button>
                       </div>
-                      {list.length ? (
-                        <div className="activity-table-wrap">
-                          <table className="activity-table">
-                            <thead>
-                              <tr>
-                                <th scope="col">项目名称 / 编号</th>
-                                <th scope="col">活动时间 / 地点</th>
-                                <th scope="col">状态</th>
-                                <th scope="col">操作</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {list.map((p) => (
-                                <tr key={p.id}>
-                                  <td>
-                                    <button
-                                      onClick={() => openProject(p.id)}
-                                      disabled={detailLoading}
-                                      className="activity-project-name"
-                                    >
-                                      {p.name}
-                                    </button>
-                                    <small>{p.code}</small>
-                                  </td>
-                                  <td>
-                                    {p.starts_on} 至 {p.ends_on}
-                                    <small>{p.location}</small>
-                                  </td>
-                                  <td>
-                                    <Badge status={p.status} />
-                                  </td>
-                                  <td>
-                                    <button
-                                      className="activity-text-button"
-                                      onClick={() => openProject(p.id)}
-                                      disabled={detailLoading}
-                                    >
-                                      详情
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <div className="activity-empty">
-                          <span className="activity-empty-icon">
-                            <ActivityIcon name="folder" />
-                          </span>
-                          <h3>
-                            {data.recent_projects.length
-                              ? "没有找到符合条件的近期项目"
-                              : "从第一个志愿服务项目开始"}
-                          </h3>
-                          <p>
-                            {data.recent_projects.length
-                              ? "试试调整关键词或切换查看全部近期项目。"
-                              : "新建立项，记录服务安排，开始后续筹备。"}
-                          </p>
-                          {!data.recent_projects.length && (
-                            <button
-                              className="button primary"
-                              disabled={!canCreate}
-                              onClick={startCreate}
-                            >
-                              <ActivityIcon name="plus" />
-                              新建项目
-                            </button>
-                          )}
-                        </div>
+                    ))
+                  ) : (
+                    <div className="activity-empty">
+                      <span className="activity-empty-icon">
+                        <ActivityIcon name="check" />
+                      </span>
+                      <h3>当前没有待跟进事项</h3>
+                      <p>项目进入需要活动负责人跟进的阶段后，会显示在这里。</p>
+                    </div>
+                  )}
+                </section>
+                <section
+                  className="panel"
+                  ref={recentRef}
+                  tabIndex={-1}
+                  aria-labelledby="activity-recent-title"
+                >
+                  <div className="activity-panel-heading">
+                    <div>
+                      <h2 id="activity-recent-title">近期项目</h2>
+                      <p>
+                        最近更新的 {data.recent_projects.length} 项 · 项目总数{" "}
+                        {data.summary.project_count}
+                      </p>
+                    </div>
+                    <label className="activity-search">
+                      <ActivityIcon name="search" />
+                      <input
+                        aria-label="搜索近期项目名称或编号"
+                        placeholder="搜索名称或编号"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <div
+                    className="activity-tabs"
+                    role="group"
+                    aria-label="近期项目视图"
+                  >
+                    <button
+                      className={view === "all" ? "selected" : ""}
+                      aria-pressed={view === "all"}
+                      onClick={() => setView("all")}
+                    >
+                      全部近期项目
+                    </button>
+                    <button
+                      className={view === "pending" ? "selected" : ""}
+                      aria-pressed={view === "pending"}
+                      onClick={() => setView("pending")}
+                    >
+                      待跟进
+                    </button>
+                  </div>
+                  {list.length ? (
+                    <ScrollRegion label="近期项目">
+                      <table className="activity-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">项目名称 / 编号</th>
+                            <th scope="col">活动时间 / 地点</th>
+                            <th scope="col">状态</th>
+                            <th scope="col">操作</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {list.map((p) => (
+                            <tr key={p.id}>
+                              <td>
+                                <button
+                                  onClick={() => openProject(p.id)}
+                                  disabled={detailLoading}
+                                  className="activity-project-name"
+                                >
+                                  {p.name}
+                                </button>
+                                <small>{p.code}</small>
+                              </td>
+                              <td>
+                                {p.starts_on} 至 {p.ends_on}
+                                <small>{p.location}</small>
+                              </td>
+                              <td>
+                                <Badge status={p.status} />
+                              </td>
+                              <td>
+                                <button
+                                  className="activity-text-button"
+                                  onClick={() => openProject(p.id)}
+                                  disabled={detailLoading}
+                                >
+                                  详情
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </ScrollRegion>
+                  ) : (
+                    <div className="activity-empty">
+                      <span className="activity-empty-icon">
+                        <ActivityIcon name="folder" />
+                      </span>
+                      <h3>
+                        {data.recent_projects.length
+                          ? "没有找到符合条件的近期项目"
+                          : "从第一个志愿服务项目开始"}
+                      </h3>
+                      <p>
+                        {data.recent_projects.length
+                          ? "试试调整关键词或切换查看全部近期项目。"
+                          : "新建立项，记录服务安排，开始后续筹备。"}
+                      </p>
+                      {!data.recent_projects.length && (
+                        <button
+                          className="button primary"
+                          disabled={!canCreate}
+                          onClick={startCreate}
+                        >
+                          <ActivityIcon name="plus" />
+                          新建项目
+                        </button>
                       )}
-                      <div className="activity-table-footer">
-                        {isSuper
-                          ? "当前范围：全部项目"
-                          : isData
-                            ? "当前范围：已提交项目"
-                            : "当前范围：本人创建的项目"}{" "}
-                        · 新建项目状态为立项
-                      </div>
-                    </section>
+                    </div>
+                  )}
+                  <div className="activity-table-footer">
+                    {isSuper
+                      ? "当前范围：全部项目"
+                      : isData
+                        ? "当前范围：已提交项目"
+                        : "当前范围：本人创建的项目"}{" "}
+                    · 新建项目状态为立项
                   </div>
-                  <div className="activity-column">
-                    <section className="panel">
-                      <div className="activity-panel-heading">
-                        <h2>项目进展</h2>
-                        <span className="muted">全部时间</span>
-                      </div>
-                      <div className="activity-phases">
-                        {phaseGroups.map(([label, included]) => {
-                          const count = data.stages
-                            .filter((s) => included.includes(s.status))
-                            .reduce((a, s) => a + s.count, 0);
-                          return (
-                            <div className="activity-phase" key={label}>
-                              <div>
-                                <span>{label}</span>
-                                <strong>{count} 项</strong>
-                              </div>
-                              <meter
-                                min="0"
-                                max={Math.max(data.summary.project_count, 1)}
-                                value={count}
-                                aria-label={`${label}：${count}项，共${data.summary.project_count}项`}
-                              />
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </section>
-                    <section className="panel">
-                      <div className="activity-panel-heading">
-                        <h2>业务提醒</h2>
-                        <Icon name="info" />
-                      </div>
-                      <div className="activity-reminder">
-                        <h3>服务时长由管理员人工登记</h3>
-                        <p>
-                          报名不会自动生成时长。活动结束后核对实际服务情况，再提交复核。
-                        </p>
-                      </div>
-                      <div className="activity-reminder">
-                        <h3>材料与业务进度独立记录</h3>
-                        <p>
-                          生成或下载附件1不会改变项目状态，状态变更需明确提交。
-                        </p>
-                      </div>
-                      <div className="activity-reminder">
-                        <h3>最终认定由数据管理员处理</h3>
-                        <p>
-                          活动管理员负责基础信息、立项和现场出勤；数据管理员负责审核、招募、时长与材料。
-                        </p>
-                      </div>
-                    </section>
+                </section>
+              </div>
+              <div className="activity-column">
+                <section className="panel">
+                  <div className="activity-panel-heading">
+                    <h2>项目进展</h2>
+                    <span className="muted">全部时间</span>
                   </div>
-                </div>
-              </>
-            )
-          )}
-          {detailLoading && (
-            <p role="status" className="activity-detail-status">
-              正在读取项目详情…
-            </p>
-          )}
-          {detailError && (
-            <p className="error" role="alert">
-              {detailError}
-            </p>
-          )}
-          <footer className="activity-footer">
-            <span>北京航空航天大学 · 志愿服务项目管理平台</span>
-            <span>
-              {data
-                ? `数据更新于 ${new Date(data.generated_at).toLocaleTimeString("zh-CN", { hour12: false })}`
-                : "活动管理"}
-            </span>
-          </footer>
-        </main>
-      </div>
+                  <div className="activity-phases">
+                    {phaseGroups.map(([label, included]) => {
+                      const count = data.stages
+                        .filter((s) => included.includes(s.status))
+                        .reduce((a, s) => a + s.count, 0);
+                      return (
+                        <div className="activity-phase" key={label}>
+                          <div>
+                            <span>{label}</span>
+                            <strong>{count} 项</strong>
+                          </div>
+                          <meter
+                            min="0"
+                            max={Math.max(data.summary.project_count, 1)}
+                            value={count}
+                            aria-label={`${label}：${count}项，共${data.summary.project_count}项`}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+                <section className="panel">
+                  <div className="activity-panel-heading">
+                    <h2>业务提醒</h2>
+                    <Icon name="info" />
+                  </div>
+                  <div className="activity-reminder">
+                    <h3>服务时长由管理员人工登记</h3>
+                    <p>
+                      报名不会自动生成时长。活动结束后核对实际服务情况，再提交复核。
+                    </p>
+                  </div>
+                  <div className="activity-reminder">
+                    <h3>材料与业务进度独立记录</h3>
+                    <p>生成或下载附件1不会改变项目状态，状态变更需明确提交。</p>
+                  </div>
+                  <div className="activity-reminder">
+                    <h3>最终认定由数据管理员处理</h3>
+                    <p>
+                      活动管理员负责基础信息、立项和现场出勤；数据管理员负责审核、招募、时长与材料。
+                    </p>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </>
+        )
+      )}
+      {detailLoading && (
+        <p role="status" className="activity-detail-status">
+          正在读取项目详情…
+        </p>
+      )}
+      {detailError && (
+        <p className="error" role="alert">
+          {detailError}
+        </p>
+      )}
+      <footer className="activity-footer">
+        <span>北京航空航天大学 · 志愿服务项目管理平台</span>
+        <span>
+          {data
+            ? `数据更新于 ${new Date(data.generated_at).toLocaleTimeString("zh-CN", { hour12: false })}`
+            : "活动管理"}
+        </span>
+      </footer>
       {creating && (
         <Modal
           title="新建志愿服务项目"
@@ -725,7 +657,10 @@ export default function ActivityHome({
           <p className="activity-modal-intro">
             先填写基础信息，项目将以「立项」状态保存。负责人为当前账号。
           </p>
-          <form onSubmit={createProject} className="activity-project-form">
+          <ValidatedForm
+            onSubmit={createProject}
+            className="activity-project-form"
+          >
             <div className="activity-form-fields">
               {fields.map((f) => (
                 <label key={f.key} className={f.full ? "full" : ""}>
@@ -785,7 +720,7 @@ export default function ActivityHome({
                 {saving ? "正在创建…" : "创建项目"}
               </button>
             </div>
-          </form>
+          </ValidatedForm>
         </Modal>
       )}
       {detail && (
@@ -821,6 +756,6 @@ export default function ActivityHome({
           </div>
         </Modal>
       )}
-    </div>
+    </WorkspaceShell>
   );
 }

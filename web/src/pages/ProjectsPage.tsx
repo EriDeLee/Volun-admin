@@ -1,3 +1,5 @@
+import ValidatedForm from "../components/ValidatedForm.tsx";
+import ScrollRegion from "../components/ScrollRegion.tsx";
 import { asApiError } from "../lib/api.ts";
 import type { WorkspaceProps, ProjectList, CreateProject } from "../types.ts";
 import React, { useEffect, useRef, useState } from "react";
@@ -7,6 +9,7 @@ import Badge from "../components/Badge.tsx";
 import Modal from "../components/Modal.tsx";
 import { projectStatuses } from "../lib/constants.ts";
 import { exportCSV } from "../lib/drafts.tsx";
+import { useMediaQuery } from "../lib/useMediaQuery.ts";
 
 const initialForm = {
   name: "",
@@ -55,6 +58,8 @@ export default function ProjectsPage({
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [notice, setNotice] = useState("");
+  const mobile = useMediaQuery("(max-width: 760px)");
+  const selectAll = useRef<HTMLInputElement>(null);
   const lock = useRef(false);
   const mounted = useRef(false);
   const requestID = useRef(0);
@@ -67,6 +72,7 @@ export default function ProjectsPage({
   const load = async () => {
     const id = ++requestID.current;
     setLoading(true);
+    setSelected(new Set<string>());
     setError("");
     try {
       const params = new URLSearchParams({
@@ -211,6 +217,54 @@ export default function ProjectsPage({
     { key: "location", label: "活动地点", max: 160, full: true },
   ];
 
+  useEffect(() => {
+    if (selectAll.current) {
+      selectAll.current.indeterminate =
+        selected.size > 0 && selected.size < (data?.items.length || 0);
+    }
+  }, [selected, data, mobile, loading]);
+
+  const hasFilters = Boolean(
+    appliedQuery || status || department || view !== "all",
+  );
+  const selectAllControl = (
+    <input
+      ref={selectAll}
+      type="checkbox"
+      aria-label="选择当前页全部项目"
+      checked={Boolean(
+        data?.items.length && selected.size === data.items.length,
+      )}
+      disabled={loading}
+      onChange={toggleAll}
+    />
+  );
+  const projectActions = (id: string) => (
+    <div className="table-actions">
+      <button className="activity-text-button" onClick={() => openProject(id)}>
+        详情
+      </button>
+      <button
+        className="activity-text-button"
+        onClick={() => onNavigate(`/projects/${id}?tab=recruit`)}
+      >
+        成员
+      </button>
+      <button
+        className="activity-text-button"
+        onClick={() => onNavigate(`/hours?project=${id}`)}
+      >
+        时长
+      </button>
+      <button
+        className="activity-text-button"
+        onClick={() => onNavigate(`/materials?project=${id}`)}
+      >
+        材料
+      </button>
+    </div>
+  );
+
   const totalPages = data
     ? Math.max(1, Math.ceil(data.total / data.page_size))
     : 1;
@@ -239,9 +293,13 @@ export default function ProjectsPage({
           <p>从立项到归档，在一个地方管理志愿服务全流程。</p>
         </div>
         <div className="activity-actions">
-          <button className="button secondary" onClick={exportSelected}>
+          <button
+            className="button secondary"
+            onClick={exportSelected}
+            disabled={!selected.size || loading || Boolean(error)}
+          >
             <Icon name="download" />
-            导出所选
+            导出所选{selected.size > 0 ? `（${selected.size}）` : ""}
           </button>
           <button
             className="button primary"
@@ -296,25 +354,30 @@ export default function ProjectsPage({
                 "认定时长",
                 data.summary.recognized_hours ?? "—",
                 "小时",
-                "时长模块暂未接入",
+                "已审核认定时长",
                 "clock",
               ],
             ] as const
-          ).map(([label, value, unit, sub, ic]) => (
-            <section key={label} className="activity-stat">
-              <div>
-                <span>{label}</span>
-                <span className="activity-stat-icon">
-                  <Icon name={ic} />
-                </span>
-              </div>
-              <strong>
-                {value}
-                <small>{unit}</small>
-              </strong>
-              <p>{sub}</p>
-            </section>
-          ))}
+          )
+            .filter(
+              ([, , , , icon]) =>
+                icon !== "clock" || data.summary.recognized_hours !== null,
+            )
+            .map(([label, value, unit, sub, ic]) => (
+              <section key={label} className="activity-stat">
+                <div>
+                  <span>{label}</span>
+                  <span className="activity-stat-icon">
+                    <Icon name={ic} />
+                  </span>
+                </div>
+                <strong>
+                  {value}
+                  <small>{unit}</small>
+                </strong>
+                <p>{sub}</p>
+              </section>
+            ))}
         </div>
       )}
       <section className="panel" aria-busy={loading}>
@@ -340,7 +403,7 @@ export default function ProjectsPage({
             待我处理
           </button>
         </div>
-        <form className="workspace-filters" onSubmit={search}>
+        <ValidatedForm className="workspace-filters" onSubmit={search}>
           <label className="activity-search">
             <Icon name="search" />
             <input
@@ -391,11 +454,39 @@ export default function ProjectsPage({
           >
             重置
           </button>
-        </form>
+        </ValidatedForm>
         <div className="filter-meta">
-          <span>共 {data?.total ?? 0} 个项目</span>
-          <span>保留 12 种业务状态 · 按更新时间倒序</span>
+          <span role="status" aria-live="polite">
+            {loading
+              ? data
+                ? "正在更新项目台账…"
+                : "正在读取项目台账…"
+              : error
+                ? "项目台账加载失败"
+                : `共 ${data?.total ?? 0} 个项目`}
+          </span>
+          <span>按更新时间倒序</span>
         </div>
+        {hasFilters && (
+          <div className="active-filters" aria-label="已应用的筛选">
+            <span>当前筛选</span>
+            {appliedQuery && (
+              <span className="filter-value">关键词：{appliedQuery}</span>
+            )}
+            {status && <span className="filter-value">{status}</span>}
+            {department && <span className="filter-value">{department}</span>}
+            {view === "pending" && (
+              <span className="filter-value">待我处理</span>
+            )}
+            <button
+              type="button"
+              className="activity-text-button"
+              onClick={resetFilters}
+            >
+              清除筛选
+            </button>
+          </div>
+        )}
         {selected.size > 0 && (
           <div className="selection-bar">
             <span>
@@ -422,122 +513,149 @@ export default function ProjectsPage({
             </button>
           </div>
         ) : loading && !data ? (
-          <div className="activity-loading" role="status">
-            正在读取项目台账…
+          <div className="ledger-skeleton" aria-hidden="true">
+            {Array.from({ length: 5 }, (_, index) => (
+              <div key={index}>
+                <span />
+                <span />
+                <span />
+              </div>
+            ))}
           </div>
         ) : data?.items?.length ? (
           <>
-            <div className="activity-table-wrap">
-              <table className="activity-table ledger-table">
-                <thead>
-                  <tr>
-                    <th scope="col">
-                      <input
-                        type="checkbox"
-                        aria-label="选择当前页全部项目"
-                        checked={
-                          data.items.length > 0 &&
-                          selected.size === data.items.length
-                        }
-                        onChange={toggleAll}
-                      />
-                    </th>
-                    <th scope="col">项目名称 / 编号</th>
-                    <th scope="col">活动负责人</th>
-                    <th scope="col">涉及部门</th>
-                    <th scope="col">活动时间 / 地点</th>
-                    <th scope="col">当前状态</th>
-                    <th scope="col">常用操作</th>
-                  </tr>
-                </thead>
-                <tbody>
+            {mobile ? (
+              <div className="project-mobile-list" aria-busy={loading}>
+                <label className="project-select-all">
+                  {selectAllControl}选择当前页全部项目
+                </label>
+                <ul aria-label="项目列表">
                   {data.items.map((p) => (
-                    <tr key={p.id}>
-                      <td>
+                    <li
+                      key={p.id}
+                      className={selected.has(p.id) ? "is-selected" : ""}
+                    >
+                      <div className="project-mobile-heading">
                         <input
                           type="checkbox"
                           aria-label={`选择${p.name}`}
                           checked={selected.has(p.id)}
+                          disabled={loading}
                           onChange={() => toggle(p.id)}
                         />
-                      </td>
-                      <td>
-                        <button
-                          className="activity-project-name"
-                          onClick={() => openProject(p.id)}
-                        >
-                          {p.name}
-                        </button>
-                        <small>
-                          {p.code}
-                          {p.description ? ` · ${p.description}` : ""}
-                        </small>
-                      </td>
-                      <td>
-                        <span className="mini-person">
-                          <span className="avatar tiny">
-                            {(p.owner_name || "?").slice(0, 1)}
-                          </span>
-                          {p.owner_name || "—"}
-                        </span>
-                      </td>
-                      <td>{p.department}</td>
-                      <td>
-                        {p.starts_on} 至 {p.ends_on}
-                        <small>{p.location}</small>
-                      </td>
-                      <td>
-                        <Badge status={p.status} />
-                        <small>
-                          {
-                            (
-                              {
-                                draft: "立项草稿",
-                                pending: "待立项审核",
-                                approved: "立项通过",
-                                returned: "立项退回",
-                              } as Record<string, string>
-                            )[p.approval || ""]
-                          }
-                        </small>
-                      </td>
-                      <td>
-                        <div className="table-actions">
+                        <div>
                           <button
-                            className="activity-text-button"
+                            className="activity-project-name"
                             onClick={() => openProject(p.id)}
                           >
-                            详情
+                            {p.name}
                           </button>
-                          <button
-                            className="activity-text-button"
-                            onClick={() =>
-                              onNavigate(`/projects/${p.id}?tab=recruit`)
-                            }
-                          >
-                            成员
-                          </button>
-                          <button
-                            className="activity-text-button"
-                            onClick={() => onNavigate(`/hours?project=${p.id}`)}
-                          >
-                            时长
-                          </button>
-                          <button
-                            className="activity-text-button"
-                            onClick={() =>
-                              onNavigate(`/materials?project=${p.id}`)
-                            }
-                          >
-                            材料
-                          </button>
+                          <small>{p.code}</small>
                         </div>
-                      </td>
-                    </tr>
+                        <Badge status={p.status} />
+                      </div>
+                      <dl className="project-mobile-meta">
+                        <div>
+                          <dt>负责人</dt>
+                          <dd>
+                            {p.owner_name || "—"} · {p.department}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>时间</dt>
+                          <dd>
+                            {p.starts_on} 至 {p.ends_on}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>地点</dt>
+                          <dd>{p.location || "—"}</dd>
+                        </div>
+                      </dl>
+                      {projectActions(p.id)}
+                    </li>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </ul>
+              </div>
+            ) : (
+              <ScrollRegion label="项目台账">
+                <table
+                  className="activity-table ledger-table"
+                  aria-label="项目台账"
+                >
+                  <thead>
+                    <tr>
+                      <th scope="col">{selectAllControl}</th>
+                      <th scope="col">项目名称 / 编号</th>
+                      <th scope="col">活动负责人</th>
+                      <th scope="col">涉及部门</th>
+                      <th scope="col">活动时间 / 地点</th>
+                      <th scope="col">当前状态</th>
+                      <th scope="col">常用操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.items.map((p) => (
+                      <tr
+                        key={p.id}
+                        className={selected.has(p.id) ? "is-selected" : ""}
+                      >
+                        <td>
+                          <input
+                            type="checkbox"
+                            aria-label={`选择${p.name}`}
+                            checked={selected.has(p.id)}
+                            disabled={loading}
+                            onChange={() => toggle(p.id)}
+                          />
+                        </td>
+                        <td>
+                          <button
+                            className="activity-project-name"
+                            onClick={() => openProject(p.id)}
+                          >
+                            {p.name}
+                          </button>
+                          <small>
+                            {p.code}
+                            {p.description ? ` · ${p.description}` : ""}
+                          </small>
+                        </td>
+                        <td>
+                          <span className="mini-person">
+                            <span className="avatar tiny">
+                              {(p.owner_name || "?").slice(0, 1)}
+                            </span>
+                            {p.owner_name || "—"}
+                          </span>
+                        </td>
+                        <td>{p.department}</td>
+                        <td>
+                          {p.starts_on} 至 {p.ends_on}
+                          <small>{p.location}</small>
+                        </td>
+                        <td>
+                          <Badge status={p.status} />
+                          <small>
+                            {
+                              (
+                                {
+                                  draft: "立项草稿",
+                                  pending: "待立项审核",
+                                  approved: "立项通过",
+                                  returned: "立项退回",
+                                } as Record<string, string>
+                              )[p.approval || ""]
+                            }
+                          </small>
+                        </td>
+                        <td>{projectActions(p.id)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </ScrollRegion>
+            )}
             <div className="pagination">
               <span>
                 第 {(page - 1) * data.page_size + 1}–
@@ -571,31 +689,40 @@ export default function ProjectsPage({
               <Icon name="folder" />
             </span>
             <h3>
-              {data?.summary?.project_count
+              {hasFilters || data?.summary?.project_count
                 ? "没有符合条件的项目"
                 : "从第一个志愿服务项目开始"}
             </h3>
             <p>
-              {data?.summary?.project_count
+              {hasFilters || data?.summary?.project_count
                 ? "试试调整筛选条件，或切换到全部项目。"
-                : "新建立项，记录服务安排，开始后续筹备。"}
+                : canCreate
+                  ? "新建立项，记录服务安排，开始后续筹备。"
+                  : "项目提交后将在这里显示，可稍后刷新查看。"}
             </p>
-            {!data?.summary?.project_count && (
-              <button
-                className="button primary"
-                disabled={!canCreate}
-                onClick={() => setCreating(true)}
-              >
-                <Icon name="plus" />
-                新建项目
+            {hasFilters ? (
+              <button className="button secondary" onClick={resetFilters}>
+                清除筛选
               </button>
+            ) : (
+              !data?.summary?.project_count &&
+              canCreate && (
+                <button
+                  className="button primary"
+                  disabled={!canCreate}
+                  onClick={() => setCreating(true)}
+                >
+                  <Icon name="plus" />
+                  新建项目
+                </button>
+              )
             )}
           </div>
         )}
       </section>
       <footer className="activity-footer">
         <span>北京航空航天大学 · 志愿服务项目管理平台</span>
-        <span>{title} · 真实数据</span>
+        <span>{title}</span>
       </footer>
       {creating && (
         <Modal
@@ -606,7 +733,10 @@ export default function ProjectsPage({
           <p className="activity-modal-intro">
             先填写基础信息，项目将以「立项」状态保存。负责人为当前账号。
           </p>
-          <form onSubmit={createProject} className="activity-project-form">
+          <ValidatedForm
+            onSubmit={createProject}
+            className="activity-project-form"
+          >
             <div className="activity-form-fields">
               {fields.map((f) => (
                 <label key={f.key} className={f.full ? "full" : ""}>
@@ -666,7 +796,7 @@ export default function ProjectsPage({
                 {saving ? "正在创建…" : "创建项目"}
               </button>
             </div>
-          </form>
+          </ValidatedForm>
         </Modal>
       )}
     </WorkspaceShell>

@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import ValidatedForm from "./ValidatedForm.tsx";
+import { useId, useRef, useState } from "react";
 import Modal from "./Modal.tsx";
 import Icon from "./Icon.tsx";
 import { request } from "../lib/workflow.ts";
@@ -28,6 +29,7 @@ export default function AccountForm({
   const [busy, setBusy] = useState(false);
   const [visible, setVisible] = useState(false);
   const [error, setError] = useState("");
+  const errorID = useId();
   const lock = useRef(false);
   const change = (
     key: "username" | "name" | "id" | "password" | "phone",
@@ -39,16 +41,11 @@ export default function AccountForm({
       onClose={onClose}
       locked={busy}
     >
-      <form
+      <ValidatedForm
         className="account-form activity-project-form"
         onSubmit={async (e) => {
           e.preventDefault();
           if (lock.current) return;
-          const bytes = new TextEncoder().encode(form.password).length;
-          if (bytes < 12 || bytes > 72) {
-            setError("密码长度须为12至72字节。");
-            return;
-          }
           if (!target && !form.groups.length) {
             setError("请至少选择一个用户组。");
             return;
@@ -63,19 +60,27 @@ export default function AccountForm({
                 { password: form.password },
               );
               onSaved(
-                `已重置 ${target.name || target.username} 的密码并撤销原会话，下次登录需设置新密码。`,
+                `已重置 ${target.name || target.username} 的密码，下次登录需设置新密码。`,
               );
             } else {
               const result = await request<{
                 valid: boolean;
                 imported: number;
-                rows: { error: string }[];
+                rows: { error: string; error_field?: string }[];
               }>("/admin/users", form);
               if (!result.valid || !result.imported) {
-                setError(
-                  result.rows.find((r) => r.error)?.error ||
-                    "添加失败，请检查填写内容。",
-                );
+                const invalid = result.rows.find((row) => row.error);
+                const field =
+                  invalid?.error_field &&
+                  document.querySelector<HTMLInputElement>(
+                    `.account-form [name="${invalid.error_field}"]`,
+                  );
+                if (field) {
+                  field.setAttribute("aria-invalid", "true");
+                  field.focus();
+                }
+                if (invalid?.error_field !== "password")
+                  setError(invalid?.error || "添加失败，请重试。");
                 return;
               }
               onSaved(`已添加成员 ${form.name}，首次登录需设置新密码。`);
@@ -87,7 +92,9 @@ export default function AccountForm({
             else
               setError(
                 failure.status === 400
-                  ? "请检查填写内容；当前账号或身份不明确的账号不能在此重置密码。"
+                  ? target
+                    ? "无法重置该成员的密码。"
+                    : "请检查标记的内容。"
                   : failure.message,
               );
           } finally {
@@ -109,9 +116,7 @@ export default function AccountForm({
             </div>
           </div>
         ) : (
-          <p className="account-intro">
-            创建平台登录账号，成员首次登录后需设置新密码。
-          </p>
+          <p className="account-intro">成员首次登录时需设置新密码。</p>
         )}
         <fieldset className="account-fields" disabled={busy}>
           <div className="activity-form-fields">
@@ -122,6 +127,8 @@ export default function AccountForm({
                   <input
                     required
                     maxLength={80}
+                    name="name"
+                    placeholder="请输入姓名"
                     value={form.name}
                     onChange={(e) => change("name", e.target.value)}
                     autoComplete="off"
@@ -132,20 +139,22 @@ export default function AccountForm({
                   <input
                     required
                     maxLength={120}
+                    name="id"
+                    placeholder="请输入学号或人员编号"
                     value={form.id}
                     onChange={(e) => change("id", e.target.value)}
                     autoComplete="off"
                   />
-                  <small>以文本保存，保留前导零</small>
                 </label>
                 <label>
                   绑定手机号
                   <input
                     type="tel"
-                    maxLength={20}
+                    data-validate="phone"
+                    name="phone"
                     value={form.phone}
                     onChange={(event) => change("phone", event.target.value)}
-                    placeholder="可暂不填写，后续绑定"
+                    placeholder="请输入手机号（选填）"
                   />
                 </label>
                 <label className="full">
@@ -153,10 +162,15 @@ export default function AccountForm({
                   <input
                     required
                     maxLength={120}
+                    name="username"
+                    placeholder="设置用于登录的账号"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                     value={form.username}
                     onChange={(e) => change("username", e.target.value)}
                     autoComplete="off"
-                    placeholder="输入唯一账号"
+                    data-validate="username"
                   />
                 </label>
               </>
@@ -165,23 +179,28 @@ export default function AccountForm({
               {target ? "临时密码" : "初始密码"}
               <div className="account-password">
                 <input
+                  name="password"
+                  placeholder={target ? "设置临时登录密码" : "设置首次登录密码"}
+                  data-validate="password"
                   required
                   type={visible ? "text" : "password"}
                   value={form.password}
-                  onChange={(e) => change("password", e.target.value)}
+                  onChange={(e) => {
+                    change("password", e.target.value);
+                    setError("");
+                  }}
                   autoComplete="new-password"
-                  placeholder="12至72字节"
                 />
                 <button
                   type="button"
                   className="activity-icon-button"
                   aria-label={visible ? "隐藏密码" : "显示密码"}
+                  aria-pressed={visible}
                   onClick={() => setVisible(!visible)}
                 >
                   <Icon name="eye" />
                 </button>
               </div>
-              <small>请单独告知成员此密码，下次登录时需设置新密码。</small>
             </label>
             {!target && (
               <fieldset className="full user-group-fieldset">
@@ -202,7 +221,6 @@ export default function AccountForm({
                         }
                       />
                       <span>{groupNames[g]}</span>
-                      <small>{g}</small>
                     </label>
                   ))}
                 </div>
@@ -213,11 +231,11 @@ export default function AccountForm({
         {target && (
           <p className="account-reset-note">
             <Icon name="info" />
-            重置后该成员所有设备的登录会话立即失效，账号启停状态和用户组保持当前设置。
+            该账号将退出所有设备。
           </p>
         )}
         {error && (
-          <p className="error" role="alert">
+          <p className="error" role="alert" id={errorID}>
             {error}
           </p>
         )}
@@ -234,7 +252,7 @@ export default function AccountForm({
             {busy ? "正在保存…" : target ? "确认重置密码" : "添加成员"}
           </button>
         </div>
-      </form>
+      </ValidatedForm>
     </Modal>
   );
 }

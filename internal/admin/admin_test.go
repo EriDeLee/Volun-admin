@@ -165,7 +165,10 @@ func TestImportUsersAtomicValidationAndInitialLogin(t *testing.T) {
 	type result struct {
 		Valid    bool
 		Imported int
-		Rows     []struct{ Error string }
+		Rows     []struct {
+			Error      string
+			ErrorField string `json:"error_field"`
+		}
 	}
 	preview := decode[result](t, call(csv, false))
 	if !preview.Valid || preview.Imported != 0 {
@@ -178,7 +181,7 @@ func TestImportUsersAtomicValidationAndInitialLogin(t *testing.T) {
 	}
 	bad := csv + "other,其他,00002,short,formal_user\n"
 	invalid := decode[result](t, call(bad, true))
-	if invalid.Valid || invalid.Imported != 0 || invalid.Rows[1].Error == "" {
+	if invalid.Valid || invalid.Imported != 0 || invalid.Rows[1].Error == "" || invalid.Rows[1].ErrorField != "password" {
 		t.Fatalf("invalid batch: %+v", invalid)
 	}
 	f.db.Model(&model.User{}).Where("username IN ?", []string{"newuser", "other"}).Count(&count)
@@ -213,7 +216,7 @@ func TestImportUsersAtomicValidationAndInitialLogin(t *testing.T) {
 		t.Fatal("password gate bypassed")
 	}
 	setupPassword := f.request("POST", "/api/v1/auth/setup-password", `{"password":"replacement-secret-456"}`, cookies[0].Value, true)
-	if setupPassword.Code != 200 {
+	if setupPassword.Code != 200 || !strings.Contains(setupPassword.Body.String(), `"auth_method":"session"`) {
 		t.Fatalf("password setup: %s", setupPassword.Body.String())
 	}
 }

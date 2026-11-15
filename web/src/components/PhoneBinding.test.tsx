@@ -9,6 +9,28 @@ afterEach(() => {
   cleanup();
   vi.resetAllMocks();
 });
+
+test("invalid phone stays marked until corrected without sending a request", async () => {
+  vi.mocked(request).mockRejectedValueOnce(
+    Object.assign(new Error("手机号格式不正确"), { status: 400 }),
+  );
+  render(<PhoneBinding onBound={vi.fn()} />);
+  const user = userEvent.setup();
+  const input = screen.getByRole("textbox", { name: "绑定手机号" });
+  await user.type(input, "123");
+  await user.click(screen.getByRole("button", { name: "绑定手机号" }));
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(request).not.toHaveBeenCalled();
+  expect(input.getAttribute("aria-invalid")).toBe("true");
+  expect(document.activeElement).toBe(input);
+
+  await user.type(input, "4");
+  expect(input.getAttribute("aria-invalid")).toBe("true");
+  await user.clear(input);
+  await user.type(input, "13800000001");
+  expect(input.hasAttribute("aria-invalid")).toBe(false);
+  expect(screen.queryByRole("alert")).toBeNull();
+});
 test("phone binding reports conflicts and then updates session on success", async () => {
   const phone = "130" + "0".repeat(7) + "1";
   const session = { user: { name: "测试", phone, groups: ["formal_user"] } };

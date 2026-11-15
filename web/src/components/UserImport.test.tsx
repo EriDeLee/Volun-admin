@@ -56,11 +56,11 @@ test("requires preview, invalidates preview after editing, and commits the revie
     screen.getByRole("textbox", { name: "CSV内容" }),
     "账号,姓名,学号,初始密码,用户组\nalice,成员,001,secret-password,formal_user",
   );
-  await user.click(screen.getByRole("button", { name: "预检" }));
+  await user.click(screen.getByRole("button", { name: "检查名单" }));
   await waitFor(() => expect(confirm.disabled).toBe(false));
   await user.type(screen.getByRole("textbox", { name: "CSV内容" }), "\n");
   expect(confirm.disabled).toBe(true);
-  await user.click(screen.getByRole("button", { name: "预检" }));
+  await user.click(screen.getByRole("button", { name: "检查名单" }));
   await waitFor(() => expect(confirm.disabled).toBe(false));
   await user.click(confirm);
   await waitFor(() => expect(onImported).toHaveBeenCalledWith(1));

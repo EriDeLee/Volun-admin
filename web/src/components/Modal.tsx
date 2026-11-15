@@ -1,5 +1,6 @@
 import type { ModalProps } from "../types.ts";
-import { useEffect, useRef } from "react";
+import { useId, useRef } from "react";
+import { useModalDialog } from "../lib/useModalDialog.ts";
 import Icon from "./Icon.tsx";
 
 export default function Modal({
@@ -9,23 +10,26 @@ export default function Modal({
   locked = false,
 }: ModalProps) {
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    ref.current?.showModal();
-  }, []);
+  const titleID = useId();
+  useModalDialog(ref);
   return (
     <dialog
       ref={ref}
       className="activity-dialog"
-      onCancel={(e) => {
-        e.preventDefault();
-        if (!locked) onClose();
+      {...{ closedby: locked ? "none" : "closerequest" }}
+      onClose={(event) => {
+        if (!event.currentTarget.open) onClose();
       }}
-      aria-labelledby="workspace-dialog-title"
+      onCancel={(event) => {
+        if (locked) event.preventDefault();
+      }}
+      aria-labelledby={titleID}
     >
       <div className="activity-dialog-head">
-        <h2 id="workspace-dialog-title">{title}</h2>
+        <h2 id={titleID}>{title}</h2>
         <button
           type="button"
+          autoFocus
           onClick={onClose}
           disabled={locked}
           className="activity-icon-button"

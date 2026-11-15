@@ -114,9 +114,9 @@ test("shows persisted empty state and unavailable hours without demonstration me
   mount(api);
   await screen.findByText("从第一个志愿服务项目开始");
   expect(api).toHaveBeenCalledWith("/activity/dashboard");
-  expect(screen.getByText("时长模块暂未接入")).toBeTruthy();
+  expect(screen.queryByText("时长模块暂未接入")).toBeNull();
   expect(screen.getByText("当前没有待跟进事项")).toBeTruthy();
-  expect(screen.getByText("—")).toBeTruthy();
+  expect(screen.queryByText("已审核认定")).toBeNull();
 });
 
 test("filters only recent projects and opens authorized basic details", async () => {

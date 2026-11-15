@@ -1,3 +1,5 @@
+import { fieldValid } from "./ValidatedForm.tsx";
+import ScrollRegion from "./ScrollRegion.tsx";
 import { useState } from "react";
 import type { Position } from "../lib/workflow.ts";
 import "./PositionList.css";
@@ -39,13 +41,13 @@ export default function PositionList({
         </button>
       </div>
       {positions.length ? (
-        <div className="activity-table-wrap">
+        <ScrollRegion label="岗位列表">
           <table className="activity-table position-list-table">
             <thead>
               <tr>
                 <th scope="col">岗位名称</th>
                 <th scope="col">招募人数</th>
-                <th scope="col">拟计整数小时</th>
+                <th scope="col">预计时长（小时）</th>
                 <th scope="col">岗位说明</th>
                 <th scope="col">操作</th>
               </tr>
@@ -66,6 +68,7 @@ export default function PositionList({
                         <input
                           aria-label={`岗位${index + 1}名称`}
                           required
+                          data-max-length={100}
                           value={position.name}
                           onChange={(event) =>
                             update(position.id, { name: event.target.value })
@@ -82,6 +85,7 @@ export default function PositionList({
                           type="number"
                           required
                           min={1}
+                          max={100000}
                           step={1}
                           value={position.capacity}
                           onChange={(event) =>
@@ -97,9 +101,10 @@ export default function PositionList({
                     <td>
                       {editable ? (
                         <input
-                          aria-label={`岗位${index + 1}拟计整数小时`}
+                          aria-label={`岗位${index + 1}预计时长（小时）`}
                           type="number"
                           min={0}
+                          max={100000}
                           step={1}
                           value={position.hours ?? ""}
                           onChange={(event) =>
@@ -111,7 +116,7 @@ export default function PositionList({
                             })
                           }
                         />
-                      ) : position.hours === null ? (
+                      ) : position.hours == null ? (
                         "未填写"
                       ) : (
                         `${position.hours} 小时`
@@ -122,6 +127,7 @@ export default function PositionList({
                         <textarea
                           aria-label={`岗位${index + 1}说明`}
                           rows={2}
+                          data-max-length={2000}
                           value={position.description}
                           onChange={(event) =>
                             update(position.id, {
@@ -143,10 +149,15 @@ export default function PositionList({
                           onClick={(event) => {
                             if (editable) {
                               const row = event.currentTarget.closest("tr");
-                              for (const input of row?.querySelectorAll(
-                                "input",
-                              ) || []) {
-                                if (!input.reportValidity()) return;
+                              for (const input of row?.querySelectorAll<
+                                HTMLInputElement | HTMLTextAreaElement
+                              >("input, textarea") || []) {
+                                if (!fieldValid(input)) {
+                                  input.setAttribute("aria-invalid", "true");
+                                  input.focus();
+                                  return;
+                                }
+                                input.removeAttribute("aria-invalid");
                               }
                             }
                             setEditing(editable ? null : position.id);
@@ -176,7 +187,7 @@ export default function PositionList({
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollRegion>
       ) : (
         <p className="position-list-empty">暂无岗位，点击“增加岗位”填写。</p>
       )}

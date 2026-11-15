@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { useModalDialog } from "../lib/useModalDialog.ts";
 import type { ApiError } from "../types.ts";
 import type { History } from "../lib/workflow.ts";
 import Icon from "./Icon.tsx";
@@ -20,6 +21,8 @@ export default function AttachmentPreview({
   onSessionIssue: (error: ApiError) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const titleID = useId();
+  useModalDialog(dialog);
   const frame = useRef<HTMLIFrameElement>(null);
   const [ready, setReady] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -29,10 +32,6 @@ export default function AttachmentPreview({
   const [zoom, setZoom] = useState("fit");
   const sessionIssue = useRef(onSessionIssue);
   sessionIssue.current = onSessionIssue;
-
-  useEffect(() => {
-    dialog.current?.showModal();
-  }, []);
 
   useEffect(() => {
     const document = frame.current?.contentDocument;
@@ -130,15 +129,14 @@ export default function AttachmentPreview({
     <dialog
       ref={dialog}
       className="activity-dialog attachment-preview-dialog"
-      aria-labelledby="attachment-preview-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        onClose();
+      aria-labelledby={titleID}
+      onClose={(event) => {
+        if (!event.currentTarget.open) onClose();
       }}
     >
       <div className="activity-dialog-head">
         <div>
-          <h2 id="attachment-preview-title">附件1预览 · 版本 {file.version}</h2>
+          <h2 id={titleID}>附件1预览 · 版本 {file.version}</h2>
           <p>{file.filename}</p>
         </div>
         <button
@@ -149,10 +147,7 @@ export default function AttachmentPreview({
           <Icon name="close" />
         </button>
       </div>
-      <p className="attachment-preview-note">
-        正在查看已生成的 Word 文件。浏览器与 Word
-        的字体、分页可能略有差异，请以下载文件为准。
-      </p>
+      <p className="attachment-preview-note">排版以下载文件为准。</p>
       <div className="attachment-preview-toolbar">
         <label>
           显示比例
