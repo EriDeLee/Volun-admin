@@ -1,8 +1,8 @@
 # 志愿服务平台前端
 
-React + TypeScript（组件与测试用 `.tsx`，接口、类型与配置用 `.ts`），Vite 构建。统一使用 Yarn 1.22.22，依赖由 `yarn.lock` 锁定，不维护 npm 锁文件。`yarn typecheck` 对源码、测试和 Vite 配置启用严格检查，`yarn build` 会先执行它。
+建议使用 Node.js 24 LTS。React + TypeScript（组件与测试用 `.tsx`，接口、类型与配置用 `.ts`），Vite 构建。统一使用 Yarn 1.22.22，依赖由 `yarn.lock` 锁定，不维护 npm 锁文件。`yarn typecheck` 对源码、测试和 Vite 配置启用严格检查，`yarn build` 会先执行它。
 
-界面沿用已确认设计：操作蓝 #2457d6、白色工作区、226px 侧栏、76px 顶栏，支持浅色/深色主题；760px 以下使用抽屉导航，宽表格在容器内滚动；使用本地中文字体与内嵌 SVG。
+界面沿用已确认设计：操作蓝 #2457d6、白色工作区、226px 侧栏、76px 顶栏，支持浅色/深色主题；760px 及以下使用原生对话框抽屉导航，项目台账切换为紧凑列表，其余宽表格在容器内滚动；使用本地中文字体与内嵌 SVG。
 
 ## 启动
 
@@ -54,10 +54,38 @@ yarn format:check
 yarn build          # 产物位于 dist/
 ```
 
-另有基于 Playwright + Edge 无头实例和模拟 API 的浏览器检查脚本 `verify-members-ui.cjs`、`verify-recruitment-ui.cjs`（可加 `--dark`）、`verify-theme-ui.cjs`、`verify-volunteer-ui.cjs`，需先启动 Vite，用 `node <脚本>` 执行。脚本中的 Edge 路径写死为 Windows 默认位置，按实际安装调整；截图输出到系统临时目录。尚未进行学校真实 SSO 和 PostgreSQL 联调。
+### 浏览器检查
 
-C 盘空间不足时，可将 `YARN_CACHE_FOLDER`、`TEMP`、`TMP` 指向有空间的目录。
+```sh
+yarn test:browser
+```
+
+`check-workspace.cjs` 自动启动 `127.0.0.1:4175` 的 Vite，退出时关闭服务；模拟 API 覆盖台账搜索、筛选恢复、选择、加载和错误重试，以及导航焦点、响应式布局和浅深主题。截图保存在 `web/browser-check/`（已忽略），模拟数据只用于验证。
+
+共享 `browser-options.cjs` 优先使用 `BROWSER_EXECUTABLE_PATH` 指定的浏览器，其次使用 `BROWSER_CHANNEL`（如 `chrome`、`msedge`），否则查找常见系统 Chrome/Chromium/Edge 与 Playwright Chromium。不再依赖写死的 Windows 路径。
+
+如果没有浏览器，可运行 `yarn exec playwright-core install chromium`。也可指定现有安装：
+
+```sh
+BROWSER_EXECUTABLE_PATH=/usr/bin/chromium yarn test:browser
+# 使用已启动的前端；设置 BASE_URL 后不自动启动服务
+BASE_URL=http://localhost:5173 yarn test:browser
+```
+
+PowerShell 使用 `$env:BROWSER_EXECUTABLE_PATH = 'C:\Program Files\Google\Chrome\Application\chrome.exe'`，再运行命令。
+
+已有场景脚本 `verify-members-ui.cjs`、`verify-recruitment-ui.cjs`（支持 `--dark`）、`verify-theme-ui.cjs`、`verify-volunteer-ui.cjs` 使用相同浏览器配置，但需要先启动 Vite，再用 `node <脚本>` 执行；默认地址 `http://127.0.0.1:5173`，可用 `BASE_URL` 覆盖，截图写入系统临时目录。这些检查不替代真实学校 SSO 和 PostgreSQL 联调。
+
+## 界面维护
+
+- 管理页、工作台和个人信息共用 `components/WorkspaceShell.tsx`，由 `Sidebar.tsx` 按角色提供导航；顶部提供“跳到主要内容”。新增页面复用外壳，避免导航与主题行为分叉。
+- 移动导航使用原生 `<dialog>`：打开后锁定背景滚动，焦点留在抽屉内，支持关闭按钮、Escape、点击遮罩和选择页面后关闭；关闭后恢复触发按钮焦点。
+- 在 `theme.css` 中维护语义颜色变量，页面通过变量支持浅深主题。操作蓝用于当前导航、关键操作和交互反馈；状态同时显示文字，不只依赖颜色。
+- 760px 及以下的项目台账显示列表，保留批量选择和详情、成员、时长、材料入口；桌面保留完整表格，部分选择时全选框显示半选状态。新请求清空旧选择，避免导出旧筛选结果。
+- 数据加载期间不显示虚假的零结果，首次加载用静态骨架；筛选无匹配提供清除入口，错误提供重试。长项目名称、部门与人员编号允许换行，保留编号前导零。
+- 使用共享 `Modal`、`Badge` 和 `Icon`；表单有可访问名称，错误用 `role="alert"`，进度与成功消息用 `role="status"`。验证键盘操作、320px 手机、平板、桌面和两种主题。
+- 保留减少动态效果偏好，不添加装饰性加载动画；不把权限判断或模拟数据当作服务端授权。
 
 ## 部署
 
-将 `login`、`set-password`、`profile`、`activity`、`projects`、`approvals`、`hours`、`materials`、`users`、`recruitment`、`my-services`、`signup` 等前端路由回退到 `index.html`；`/api`、SSO 发起及回调交给 Go 服务。
+将 `login`、`set-password`、`profile`、`activity`、`projects`、`approvals`、`hours`、`materials`、`users`、`recruitment`、`my-services`、`signup` 等前端路由回退到 `index.html`；`/api`、SSO 发起 `/api/v1/auth/sso/start` 及回调 `/auth/sso/callback` 交给 Go 服务。

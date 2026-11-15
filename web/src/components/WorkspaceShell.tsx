@@ -15,17 +15,24 @@ export default function WorkspaceShell({
   logoutPending,
   children,
   actions,
+  space = "工作空间",
+  contentClassName = "activity-content",
 }: Omit<WorkspaceProps, "api" | "onSessionIssue"> & {
   route: string;
   crumb: string;
   children: React.ReactNode;
   actions?: React.ReactNode;
   projectCount?: number;
+  space?: string;
+  contentClassName?: string;
 }) {
   const [menu, setMenu] = useState(false);
 
   return (
     <div className="activity-shell">
+      <a className="skip-link" href="#workspace-content">
+        跳到主要内容
+      </a>
       <Sidebar
         session={session}
         route={route}
@@ -39,12 +46,13 @@ export default function WorkspaceShell({
             className="activity-icon-button activity-mobile-menu"
             aria-label="展开导航"
             aria-expanded={menu}
+            aria-controls="workspace-navigation"
             onClick={() => setMenu(!menu)}
           >
             <Icon name="menu" />
           </button>
           <span>
-            工作空间 <b>/</b> <strong>{crumb}</strong>
+            {space} <b>/</b> <strong>{crumb}</strong>
           </span>
           <div className="activity-top-actions">
             <ThemeSelect />
@@ -66,7 +74,9 @@ export default function WorkspaceShell({
             </button>
           </div>
         </header>
-        <main className="activity-content">{children}</main>
+        <main id="workspace-content" className={contentClassName} tabIndex={-1}>
+          {children}
+        </main>
       </div>
     </div>
   );

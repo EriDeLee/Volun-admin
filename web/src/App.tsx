@@ -1,4 +1,3 @@
-import Sidebar from "./components/Sidebar.tsx";
 import type { AuthSession, ApiError } from "./types.ts";
 import { asApiError } from "./lib/api.ts";
 import React, { useEffect, useRef, useState } from "react";
@@ -18,7 +17,7 @@ import "./workspace.css";
 import "./theme.css";
 import ThemeSelect from "./components/ThemeSelect.tsx";
 import Icon from "./components/Icon.tsx";
-import { Brand } from "./components/WorkspaceShell.tsx";
+import WorkspaceShell, { Brand } from "./components/WorkspaceShell.tsx";
 import { api } from "./lib/api.ts";
 import { useDraftStore } from "./lib/drafts.tsx";
 
@@ -53,7 +52,6 @@ export default function App() {
 }
 function Application() {
   const { reset: resetDrafts } = useDraftStore();
-  const [menu, setMenu] = useState(false);
   const [session, setSession] = useState<AuthSession | null>(null),
     [checking, setChecking] = useState(true),
     [startupError, setStartupError] = useState("");
@@ -577,214 +575,188 @@ function Application() {
       session: "已通过会话验证",
     }[session.auth_method || "session"] || "已通过会话验证";
   return (
-    <div className="profile-shell activity-shell">
-      <Sidebar
-        session={session}
-        route="/profile"
-        onNavigate={navigate}
-        open={menu}
-        onClose={() => setMenu(false)}
-      />
-      <div className="profile-main">
-        <header className="topbar activity-topbar">
-          <button
-            className="activity-icon-button activity-mobile-menu"
-            aria-label="展开导航"
-            aria-expanded={menu}
-            onClick={() => setMenu(!menu)}
-          >
-            <Icon name="menu" />
-          </button>
-          <span>
-            个人空间 <b>/</b> <strong>个人信息</strong>
-          </span>
-          <ThemeSelect />
-          <button
-            className="button secondary"
-            onClick={logout}
-            disabled={!!pending}
-          >
-            <Icon name="logout" />
-            {pending === "logout" ? "正在退出…" : "退出登录"}
-          </button>
-        </header>
-        <main className="profile-content">
-          <div className="page-heading">
-            <div>
-              <h1>个人信息</h1>
-              {canManage(session) && (
-                <a
-                  className="activity-text-button"
-                  href="/activity"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    navigate("/activity");
-                  }}
-                >
-                  返回活动工作台
-                </a>
-              )}
-              <p>报名前请确认姓名、学号 / 人员编号，并绑定本人手机号。</p>
-            </div>
-            <button
-              className="button secondary"
-              onClick={() => loadSession()}
-              disabled={!!pending}
+    <WorkspaceShell
+      session={session}
+      route="/profile"
+      crumb="个人信息"
+      space="个人空间"
+      contentClassName="profile-content"
+      onNavigate={navigate}
+      logout={logout}
+      logoutPending={pending === "logout"}
+    >
+      <div className="page-heading">
+        <div>
+          <h1>个人信息</h1>
+          {canManage(session) && (
+            <a
+              className="activity-text-button"
+              href="/activity"
+              onClick={(e) => {
+                e.preventDefault();
+                navigate("/activity");
+              }}
             >
-              <Icon name="refresh" />
-              {pending === "refresh" ? "正在刷新…" : "刷新信息"}
-            </button>
-          </div>
-          {error && (
-            <p className="error" role="alert">
-              {error}
-            </p>
+              返回活动工作台
+            </a>
           )}
-          {notice && (
-            <p className="success" role="status">
-              {notice}
-            </p>
-          )}
-          <section className="workspace-info" aria-label="报名资料完整度">
-            <div>
-              <strong>
-                {profileComplete(user) ? "报名资料已完善" : "报名资料待完善"}
-              </strong>
-              <p>
-                {profileComplete(user)
-                  ? "姓名、学号和手机号已齐全，可以报名志愿服务。"
-                  : "请先绑定手机号；姓名或学号缺失时，请联系管理员核实补全。"}
-              </p>
-            </div>
-            {profileComplete(user) && (
-              <button
-                className="button primary"
-                onClick={() => {
-                  const target = sessionStorage.getItem("volunteer_return");
-                  sessionStorage.removeItem("volunteer_return");
-                  navigate(
-                    target?.startsWith("/signup?project=")
-                      ? target
-                      : "/recruitment",
-                  );
-                }}
-              >
-                继续报名
-              </button>
-            )}
-          </section>
-          <section className="identity-banner">
-            <span className="avatar large">{name.slice(0, 1)}</span>
-            <div>
-              <div className="identity-name">
-                <h2>{name}</h2>
-                <span className="badge">
-                  <Icon name="check" />
-                  已登录
-                </span>
-              </div>
-              <p>{user.username || "学校统一认证用户"}</p>
-              <div className="group-list">
-                {groups.map((g) => (
-                  <span key={g} className="badge white">
-                    {groupNames[g] || g}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <Icon name="shield" className="identity-shield" />
-          </section>
-          <div className="profile-grid">
-            <section className="panel">
-              <div className="panel-heading">
-                <Icon name="user" />
-                <h2>基本资料</h2>
-                <span>当前账号</span>
-              </div>
-              <dl className="details">
-                <div>
-                  <dt>姓名</dt>
-                  <dd>{user.name || "未提供"}</dd>
-                </div>
-                <div>
-                  <dt>登录账号</dt>
-                  <dd>{user.username || "未提供"}</dd>
-                </div>
-                <div>
-                  <dt>学号 / 人员编号</dt>
-                  <dd>{user.id || "未提供"}</dd>
-                </div>
-                <div>
-                  <dt>绑定手机号</dt>
-                  <dd>{user.phone || "尚未绑定"}</dd>
-                </div>
-              </dl>
-              <PhoneBinding phone={user.phone} onBound={setSession} />
-              <p className="panel-note">
-                <Icon name="info" />
-                资料来自当前账号记录，如需更正请联系管理员。
-              </p>
-            </section>
-            <div className="right-column">
-              <section className="panel">
-                <div className="panel-heading">
-                  <Icon name="shield" />
-                  <h2>账号与访问</h2>
-                </div>
-                <dl className="details compact">
-                  <div>
-                    <dt>登录状态</dt>
-                    <dd>
-                      <span className="status-dot" />
-                      会话有效
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>验证方式</dt>
-                    <dd>{authLabel}</dd>
-                  </div>
-                  <div>
-                    <dt>最近读取</dt>
-                    <dd>
-                      {updated?.toLocaleTimeString("zh-CN", {
-                        hour12: false,
-                      }) || "—"}
-                    </dd>
-                  </div>
-                </dl>
-                <p className="panel-note">
-                  退出平台会撤销当前平台会话，不会退出学校其他系统。
-                </p>
-              </section>
-              <section className="panel">
-                <div className="panel-heading">
-                  <Icon name="user" />
-                  <h2>所属用户组</h2>
-                </div>
-                <div className="permission-body">
-                  <div className="group-list">
-                    {groups.length ? (
-                      groups.map((g) => (
-                        <span className="badge" key={g}>
-                          {groupNames[g] || g}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="muted">暂未分配用户组</span>
-                    )}
-                  </div>
-                  <p>
-                    用户组由平台管理员分配。项目的实际访问范围以具体授权为准。
-                  </p>
-                </div>
-              </section>
-            </div>
-          </div>
-          <footer className="page-footer">
-            北京航空航天大学 · 志愿服务项目管理平台
-          </footer>
-        </main>
+          <p>报名前请确认姓名、学号 / 人员编号，并绑定本人手机号。</p>
+        </div>
+        <button
+          className="button secondary"
+          onClick={() => loadSession()}
+          disabled={!!pending}
+        >
+          <Icon name="refresh" />
+          {pending === "refresh" ? "正在刷新…" : "刷新信息"}
+        </button>
       </div>
-    </div>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p className="success" role="status">
+          {notice}
+        </p>
+      )}
+      <section className="workspace-info" aria-label="报名资料完整度">
+        <div>
+          <strong>
+            {profileComplete(user) ? "报名资料已完善" : "报名资料待完善"}
+          </strong>
+          <p>
+            {profileComplete(user)
+              ? "姓名、学号和手机号已齐全，可以报名志愿服务。"
+              : "请先绑定手机号；姓名或学号缺失时，请联系管理员核实补全。"}
+          </p>
+        </div>
+        {profileComplete(user) && (
+          <button
+            className="button primary"
+            onClick={() => {
+              const target = sessionStorage.getItem("volunteer_return");
+              sessionStorage.removeItem("volunteer_return");
+              navigate(
+                target?.startsWith("/signup?project=")
+                  ? target
+                  : "/recruitment",
+              );
+            }}
+          >
+            继续报名
+          </button>
+        )}
+      </section>
+      <section className="identity-banner">
+        <span className="avatar large">{name.slice(0, 1)}</span>
+        <div>
+          <div className="identity-name">
+            <h2>{name}</h2>
+            <span className="badge">
+              <Icon name="check" />
+              已登录
+            </span>
+          </div>
+          <p>{user.username || "学校统一认证用户"}</p>
+          <div className="group-list">
+            {groups.map((g) => (
+              <span key={g} className="badge white">
+                {groupNames[g] || g}
+              </span>
+            ))}
+          </div>
+        </div>
+        <Icon name="shield" className="identity-shield" />
+      </section>
+      <div className="profile-grid">
+        <section className="panel">
+          <div className="panel-heading">
+            <Icon name="user" />
+            <h2>基本资料</h2>
+            <span>当前账号</span>
+          </div>
+          <dl className="details">
+            <div>
+              <dt>姓名</dt>
+              <dd>{user.name || "未提供"}</dd>
+            </div>
+            <div>
+              <dt>登录账号</dt>
+              <dd>{user.username || "未提供"}</dd>
+            </div>
+            <div>
+              <dt>学号 / 人员编号</dt>
+              <dd>{user.id || "未提供"}</dd>
+            </div>
+            <div>
+              <dt>绑定手机号</dt>
+              <dd>{user.phone || "尚未绑定"}</dd>
+            </div>
+          </dl>
+          <PhoneBinding phone={user.phone} onBound={setSession} />
+          <p className="panel-note">
+            <Icon name="info" />
+            资料来自当前账号记录，如需更正请联系管理员。
+          </p>
+        </section>
+        <div className="right-column">
+          <section className="panel">
+            <div className="panel-heading">
+              <Icon name="shield" />
+              <h2>账号与访问</h2>
+            </div>
+            <dl className="details compact">
+              <div>
+                <dt>登录状态</dt>
+                <dd>
+                  <span className="status-dot" />
+                  会话有效
+                </dd>
+              </div>
+              <div>
+                <dt>验证方式</dt>
+                <dd>{authLabel}</dd>
+              </div>
+              <div>
+                <dt>最近读取</dt>
+                <dd>
+                  {updated?.toLocaleTimeString("zh-CN", {
+                    hour12: false,
+                  }) || "—"}
+                </dd>
+              </div>
+            </dl>
+            <p className="panel-note">
+              退出平台会撤销当前平台会话，不会退出学校其他系统。
+            </p>
+          </section>
+          <section className="panel">
+            <div className="panel-heading">
+              <Icon name="user" />
+              <h2>所属用户组</h2>
+            </div>
+            <div className="permission-body">
+              <div className="group-list">
+                {groups.length ? (
+                  groups.map((g) => (
+                    <span className="badge" key={g}>
+                      {groupNames[g] || g}
+                    </span>
+                  ))
+                ) : (
+                  <span className="muted">暂未分配用户组</span>
+                )}
+              </div>
+              <p>用户组由平台管理员分配。项目的实际访问范围以具体授权为准。</p>
+            </div>
+          </section>
+        </div>
+      </div>
+      <footer className="page-footer">
+        北京航空航天大学 · 志愿服务项目管理平台
+      </footer>
+    </WorkspaceShell>
   );
 }

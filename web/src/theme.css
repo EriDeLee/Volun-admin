@@ -8,7 +8,7 @@
   --text: #233149;
   --text-strong: #172b43;
   --text-muted: #65748b;
-  --text-subtle: #8290a5;
+  --text-subtle: #5f6f86;
   --on-accent: #fff;
   --accent: #2457d6;
   --accent-solid: #2457d6;
@@ -79,6 +79,14 @@ textarea::placeholder {
   color: var(--text-subtle);
   opacity: 1;
 }
+::selection {
+  background: var(--accent-solid);
+  color: var(--on-accent);
+}
+input,
+textarea {
+  caret-color: var(--accent);
+}
 select:focus-visible,
 textarea:focus-visible {
   outline: 3px solid var(--focus);
@@ -144,7 +152,7 @@ textarea:focus-visible {
     justify-content: flex-end;
   }
   .activity-topbar > span {
-    min-width: calc(100% - 52px);
+    min-width: 0;
   }
   .activity-topbar > .theme-select {
     margin-left: auto;

@@ -3,8 +3,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "yarn typecheck && vite build",
-    "format": "prettier --write src index.html package.json vite.config.ts tsconfig.json check-workspace.cjs",
-    "format:check": "prettier --check src index.html package.json vite.config.ts tsconfig.json check-workspace.cjs",
+    "format": "prettier --write src index.html package.json vite.config.ts tsconfig.json check-workspace.cjs browser-options.cjs",
+    "format:check": "prettier --check src index.html package.json vite.config.ts tsconfig.json check-workspace.cjs browser-options.cjs",
     "test": "vitest run --environment jsdom",
     "test:browser": "node check-workspace.cjs",
     "typecheck": "tsc --noEmit"

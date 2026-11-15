@@ -1,11 +1,6 @@
 import type { ComponentProps, ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
-import {
-  cleanup,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import WorkflowPage from "./WorkflowPage.tsx";
 import ParticipantPage from "./ParticipantPage.tsx";
