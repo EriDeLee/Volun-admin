@@ -442,7 +442,7 @@ paths:
                 commit: {type: boolean, default: false}
       responses:
         '200':
-          description: 预检结果；valid=false表示存在逐行错误，imported始终为0。
+          description: 检查或导入结果；valid=false表示存在逐行错误，整批不写入。commit=false时imported为0，成功导入时为新增人数。
           content:
             application/json:
               schema:
@@ -464,8 +464,13 @@ paths:
                                 username: {type: string}
                                 name: {type: string}
                                 id: {type: string}
+                                phone: {type: string}
                                 groups: {type: array, items: {type: string}}
                                 error: {type: string}
+                                error_field:
+                                  type: string
+                                  enum: [username, name, id, password, groups, phone]
+                                  description: 有错误时标识对应字段，供导入预览定位；不返回密码值。
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
