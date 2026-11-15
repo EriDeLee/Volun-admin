@@ -41,7 +41,7 @@ const record = {
   hours: [],
 };
 
-function mockServer(signedIn = true) {
+function mockServer(signedIn = true, formStatus = 200) {
   const reply = (data: unknown, status = 200) => ({
     ok: status === 200,
     status,
@@ -56,6 +56,15 @@ function mockServer(signedIn = true) {
       return reply({});
     }
     if (path === "/api/v1/public/projects/p1/me") return reply(record);
+    if (path.includes("/forms/") && formStatus !== 200)
+      return {
+        ok: false,
+        status: formStatus,
+        json: async () => ({
+          errcode: formStatus === 409 ? 400003 : 900001,
+          message: "问卷或签到窗口已关闭",
+        }),
+      };
     if (path.includes("/forms/"))
       return reply({
         project: record.project,
@@ -210,6 +219,45 @@ test("logging out from a participant page clears the app session", async () => {
     "/api/v1/auth/logout",
     expect.objectContaining({ method: "POST" }),
   );
+});
+
+test.each([
+  [409, "问卷或签到窗口已关闭"],
+  [503, "服务暂时不可用，请稍后重试。"],
+] as const)(
+  "a failed form (%s) preserves the session when navigating to the profile",
+  async (status, message) => {
+    history.replaceState(null, "", "/signup?project=p1&form=f1");
+    mockServer(true, status);
+    render(<App />);
+    expect((await screen.findByRole("alert")).textContent).toBe(message);
+    expect(screen.queryByRole("button", { name: "提交报名" })).toBeNull();
+    await userEvent.click(
+      within(screen.getByRole("navigation", { name: "页面导航" })).getByRole(
+        "link",
+        { name: "个人信息" },
+      ),
+    );
+    await screen.findByRole("heading", { name: "个人信息" });
+    expect(location.pathname).toBe("/profile");
+    expect(screen.queryByLabelText("账号")).toBeNull();
+    expect(screen.getAllByText(session.user.username).length).toBeGreaterThan(
+      0,
+    );
+  },
+);
+
+test("a closed form keeps guests unauthenticated when navigating away", async () => {
+  history.replaceState(null, "", "/signup?project=p1&form=f1");
+  mockServer(false, 409);
+  render(<App />);
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "问卷或签到窗口已关闭",
+  );
+  expect(screen.queryByRole("link", { name: "工作台" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "退出登录" })).toBeNull();
+  await userEvent.click(screen.getByRole("link", { name: "个人信息" }));
+  expect(screen.getByLabelText("账号")).toBeTruthy();
 });
 
 test.each(["unauthenticated", "authenticated", "setup-required"])(

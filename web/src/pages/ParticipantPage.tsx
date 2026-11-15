@@ -95,13 +95,7 @@ export default function ParticipantPage({
   };
   const refresh = async (current = lifetime.current) => {
     if (!current.active) return;
-    if (formID) {
-      const published = await request<NonNullable<typeof form>>(
-        `${base}/forms/${formID}`,
-      );
-      if (!current.active) return;
-      setForm(published);
-    }
+    // Restore navigation identity even when the linked form is closed or unavailable.
     try {
       const authenticated = await request<AuthSession>("/auth/me");
       if (!current.active) return;
@@ -120,6 +114,13 @@ export default function ParticipantPage({
       if (!current.active) return;
       if ((cause as { status?: number }).status !== 401) throw cause;
       updateIdentity(null);
+    }
+    if (formID) {
+      const published = await request<NonNullable<typeof form>>(
+        `${base}/forms/${formID}`,
+      );
+      if (!current.active) return;
+      setForm(published);
     }
     if (sessionID) {
       const scanned = await request<NonNullable<typeof scan>>(

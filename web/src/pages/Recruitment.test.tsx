@@ -390,6 +390,9 @@ test("recruit form waits for its type without flashing an SSO prompt", async () 
     throw new Error("未报名");
   });
   render(<ParticipantPage />);
+  await waitFor(() =>
+    expect(request).toHaveBeenCalledWith("/public/projects/p/forms/f"),
+  );
   expect(screen.getByRole("status").textContent).toContain("正在加载");
   expect(screen.queryByRole("button", { name: /SSO/ })).toBeNull();
   expect(screen.queryByRole("textbox", { name: "姓名" })).toBeNull();
@@ -407,7 +410,11 @@ test("recruit form waits for its type without flashing an SSO prompt", async () 
 
 test("an unavailable recruit form shows its error without an SSO fallback", async () => {
   history.replaceState(null, "", "/signup?project=p&form=f");
-  vi.mocked(request).mockRejectedValue(new Error("问卷或签到窗口已关闭"));
+  vi.mocked(request).mockImplementation(async (path) => {
+    if (path === "/auth/me")
+      throw Object.assign(new Error("未登录"), { status: 401 });
+    throw new Error("问卷或签到窗口已关闭");
+  });
   render(<ParticipantPage />);
   await screen.findByRole("alert");
   expect(screen.queryByRole("status")).toBeNull();
