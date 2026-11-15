@@ -23,6 +23,7 @@ export function fieldValid(field: Field) {
   if (
     field.required &&
     field.dataset.validate !== "password" &&
+    field.autocomplete !== "current-password" &&
     !field.value.trim()
   )
     return false;

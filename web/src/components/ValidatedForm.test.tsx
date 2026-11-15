@@ -91,3 +91,35 @@ test("required and numeric fields clear only when corrected, including valid zer
   await user.click(screen.getByRole("button", { name: "保存" }));
   expect(saved).toHaveBeenCalledTimes(1);
 });
+
+test("login passwords preserve whitespace and do not inherit new-password limits", () => {
+  const saved = vi.fn();
+  render(
+    <ValidatedForm
+      onSubmit={(event) => {
+        event.preventDefault();
+        saved();
+      }}
+    >
+      <label>
+        登录密码
+        <input required type="password" autoComplete="current-password" />
+      </label>
+      <button>登录</button>
+    </ValidatedForm>,
+  );
+  const input = screen.getByLabelText<HTMLInputElement>("登录密码");
+  const form = input.form!;
+  fireEvent.submit(form);
+  expect(saved).not.toHaveBeenCalled();
+  expect(input.getAttribute("aria-invalid")).toBe("true");
+  for (const type of ["password", "text"]) {
+    input.type = type;
+    for (const value of [" ".repeat(12), "short", "x".repeat(73)]) {
+      fireEvent.change(input, { target: { value } });
+      fireEvent.submit(form);
+      expect(input.hasAttribute("aria-invalid")).toBe(false);
+    }
+  }
+  expect(saved).toHaveBeenCalledTimes(6);
+});
